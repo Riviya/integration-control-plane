@@ -1,5 +1,15 @@
 import { authenticatedFetch } from '../auth/tokenManager';
 
+/**
+ * Sends a GraphQL request to the ICP server.
+ * Safely handles non-JSON responses (e.g. HTML error pages on 401/500)
+ * by reading the body as text first and parsing cautiously.
+ *
+ * @param query - The GraphQL query or mutation string
+ * @param variables - Optional variables to pass with the query
+ * @returns The `data` field from the GraphQL response
+ * @throws {Error} If the HTTP request fails or the server returns GraphQL errors
+ */
 export async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   const res = await authenticatedFetch(window.API_CONFIG.graphqlUrl, {
     method: 'POST',
@@ -8,23 +18,35 @@ export async function gql<T>(query: string, variables?: Record<string, unknown>)
   });
 
   const text = await res.text();
-  let json: any = undefined;
+  let json: any;
 
-  if (text) {
-    try {
-      json = JSON.parse(text);
-    } catch {
-      // If the server returned non-JSON HTML or plain text, keep the raw text
+  try {
+    json = JSON.parse(text);
+  } catch {
+    if (!res.ok) {
+      throw new Error(`GraphQL request failed (${res.status} ${res.statusText}): ${text.slice(0, 500)}`);
     }
+    throw new Error(`Invalid JSON response from GraphQL endpoint: ${text.slice(0, 500)}`);
   }
 
+  // Check for non-OK HTTP status with truncated preview + GraphQL errors envelope
   if (!res.ok) {
-    const message = json?.message ?? text;
-    throw new Error(message || `Request failed (${res.status})`);
+    const preview = text.length > 500 ? `${text.slice(0, 500)}…` : text;
+    const message =
+      json?.errors?.[0]?.message ??
+      json?.message ??
+      preview;
+    throw new Error(`Request failed (${res.status})${message ? `: ${message}` : ''}`);
   }
 
-  if (json?.errors) {
+  // Check for GraphQL-level errors in successful HTTP response
+  if (json?.errors && Array.isArray(json.errors) && json.errors.length > 0) {
     throw new Error(json.errors[0]?.message ?? 'GraphQL error occurred');
+  }
+
+  // Validate that response contains required data field
+  if (!json || !('data' in json)) {
+    throw new Error('Invalid GraphQL response: missing "data" field');
   }
 
   return json.data as T;
