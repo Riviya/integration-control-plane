@@ -32,10 +32,7 @@ export async function gql<T>(query: string, variables?: Record<string, unknown>)
   // Check for non-OK HTTP status with truncated preview + GraphQL errors envelope
   if (!res.ok) {
     const preview = text.length > 500 ? `${text.slice(0, 500)}…` : text;
-    const message =
-      json?.errors?.[0]?.message ??
-      json?.message ??
-      preview;
+    const message = json?.errors?.[0]?.message ?? json?.message ?? preview;
     throw new Error(`Request failed (${res.status})${message ? `: ${message}` : ''}`);
   }
 
