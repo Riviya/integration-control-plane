@@ -17,6 +17,7 @@
  */
 
 import { Accordion, AccordionSummary, AccordionDetails, Box, Card, CardContent, Chip, CircularProgress, Divider, Stack, Typography } from '@wso2/oxygen-ui';
+import SearchField from './SearchField';
 import { ChevronDown } from '@wso2/oxygen-ui-icons-react';
 import { useMemo, useState } from 'react';
 import { useArtifactSource, useArtifactParams, useArtifactWsdl, useLocalEntryValue, useDataSourceOverview, useDataServiceOverview, useMessageProcessorOverview, ARTIFACT_TYPE_TO_SOURCE_TYPE } from '../api/queries';
@@ -201,43 +202,57 @@ function DataServiceSection<T>({ title, items, renderSummary, renderDetails }: {
         {title}
       </Typography>
       <Stack gap={0.75}>
-        {items.map((item, i) => (
-          <Accordion key={i} disableGutters sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, '&:before': { display: 'none' } }}>
-            <AccordionSummary expandIcon={<ChevronDown size={16} />} sx={{ bgcolor: 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 500 }}>
-                {renderSummary(item)}
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails sx={{ bgcolor: 'background.paper', p: 0 }}>
-              <ListingTable>
-                <ListingTable.Head>
-                  <ListingTable.Row>
-                    {renderDetails(item)[0]?.map((_, idx) => (
-                      <ListingTable.Cell key={idx}>Detail</ListingTable.Cell>
-                    ))}
-                  </ListingTable.Row>
-                </ListingTable.Head>
-                <ListingTable.Body>
-                  {renderDetails(item).length === 0 ? (
-                    <ListingTable.Row>
-                      <ListingTable.Cell colSpan={2} align="center" sx={emptySx}>
-                        No details.
-                      </ListingTable.Cell>
-                    </ListingTable.Row>
-                  ) : (
-                    renderDetails(item).map((row, i) => (
-                      <ListingTable.Row key={i}>
-                        {row.map((cell, j) => (
-                          <ListingTable.Cell key={j}>{cell}</ListingTable.Cell>
+        {items.map((item, i) => {
+          const details = renderDetails(item);
+          // Derive headers from tuple keys if available, else fallback
+          let headers: string[] = [];
+          if (details.length > 0) {
+            // If details are array of tuples, try to use keys if available
+            // If details[0] is an array, use default labels
+            if (Array.isArray(details[0])) {
+              headers = ['Field', 'Value'];
+            }
+          }
+          return (
+            <Accordion key={i} disableGutters sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, '&:before': { display: 'none' } }}>
+              <AccordionSummary expandIcon={<ChevronDown size={16} />} sx={{ bgcolor: 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}>
+                <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 500 }}>
+                  {renderSummary(item)}
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ bgcolor: 'background.paper', p: 0 }}>
+                <ListingTable>
+                  {details.length > 0 && (
+                    <ListingTable.Head>
+                      <ListingTable.Row>
+                        {headers.map((header, idx) => (
+                          <ListingTable.Cell key={idx}>{header}</ListingTable.Cell>
                         ))}
                       </ListingTable.Row>
-                    ))
+                    </ListingTable.Head>
                   )}
-                </ListingTable.Body>
-              </ListingTable>
-            </AccordionDetails>
-          </Accordion>
-        ))}
+                  <ListingTable.Body>
+                    {details.length === 0 ? (
+                      <ListingTable.Row>
+                        <ListingTable.Cell colSpan={2} align="center" sx={emptySx}>
+                          No details.
+                        </ListingTable.Cell>
+                      </ListingTable.Row>
+                    ) : (
+                      details.map((row, i) => (
+                        <ListingTable.Row key={i}>
+                          {row.map((cell, j) => (
+                            <ListingTable.Cell key={j}>{cell}</ListingTable.Cell>
+                          ))}
+                        </ListingTable.Row>
+                      ))
+                    )}
+                  </ListingTable.Body>
+                </ListingTable>
+              </AccordionDetails>
+            </Accordion>
+          );
+        })}
       </Stack>
     </Box>
   );
@@ -752,15 +767,24 @@ export function AutomationExecutions({ artifact }: TabProps) {
   return (
     <Stack gap={1}>
       <Box sx={{ mb: 1, width: '100%', maxWidth: 400 }}>
-        <input
-          type="text"
+        <SearchField
           value={search}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-            setSearch(e.target.value);
+          onChange={(val: string) => {
+            setSearch(val);
             setPage(0);
           }}
           placeholder="Search executions..."
-          style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc', fontSize: 14 }}
+          fullWidth
+          sx={{
+            bgcolor: 'background.paper',
+            borderRadius: 1,
+            boxShadow: 0,
+            '& .MuiOutlinedInput-root': {
+              px: 1.5,
+              py: 1,
+              fontSize: 14,
+            },
+          }}
         />
       </Box>
       <ListingTable>
