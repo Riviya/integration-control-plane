@@ -42,7 +42,6 @@ import {
   Typography,
 } from '@wso2/oxygen-ui';
 import { Maximize2, RefreshCw, Server, X } from '@wso2/oxygen-ui-icons-react';
-import DataTable from '../components/DataTable';
 import { useState, type JSX } from 'react';
 import { useQueryClient, useQueries } from '@tanstack/react-query';
 import { useProjectByHandler, useComponentByHandler, useEnvironments, useLoggers, RUNTIMES_QUERY, type GqlRuntime } from '../api/queries';
@@ -235,14 +234,30 @@ function LoggersList({ environmentId, componentId, componentType }: { environmen
             </Stack>
           </Stack>
           <Box sx={{ px: 2, py: 2 }}>
-            <DataTable
-              rows={runtimeDrawer.runtimeIds.map((runtimeId) => [
-                <Typography key="id" sx={{ fontFamily: 'monospace', fontSize: 12 }}>
-                  {runtimeId}
-                </Typography>,
-              ])}
-              emptyMsg="No runtimes found."
-            />
+            <ListingTable>
+              <ListingTable.Head>
+                <ListingTable.Row>
+                  <ListingTable.Cell>Runtime ID</ListingTable.Cell>
+                </ListingTable.Row>
+              </ListingTable.Head>
+              <ListingTable.Body>
+                {runtimeDrawer.runtimeIds.length === 0 ? (
+                  <ListingTable.Row>
+                    <ListingTable.Cell align="center" colSpan={1}>
+                      No runtimes found.
+                    </ListingTable.Cell>
+                  </ListingTable.Row>
+                ) : (
+                  runtimeDrawer.runtimeIds.map((runtimeId) => (
+                    <ListingTable.Row key={runtimeId}>
+                      <ListingTable.Cell>
+                        <Typography sx={{ fontFamily: 'monospace', fontSize: 12 }}>{runtimeId}</Typography>
+                      </ListingTable.Cell>
+                    </ListingTable.Row>
+                  ))
+                )}
+              </ListingTable.Body>
+            </ListingTable>
           </Box>
         </Drawer>
       )}
