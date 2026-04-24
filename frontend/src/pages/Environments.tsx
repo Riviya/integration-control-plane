@@ -132,6 +132,8 @@ export default function Environments(scope: OrgScope | ProjectScope): JSX.Elemen
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  // Sorting state: key = column, direction = 'asc' | 'desc'
+  const [sort, setSort] = useState<{ key: keyof GqlEnvironment | 'type' | 'createdAt'; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
 
   useEffect(() => {
     const state = location.state as { success?: boolean; environmentName?: string; updated?: boolean; name?: string } | null;
@@ -148,12 +150,49 @@ export default function Environments(scope: OrgScope | ProjectScope): JSX.Elemen
     if (!environments) return [];
     if (!search.trim()) return environments;
     const s = search.trim().toLowerCase();
-    return environments.filter((env) => env.name.toLowerCase().includes(s) || env.handler.toLowerCase().includes(s) || env.description?.toLowerCase().includes(s));
+    return environments.filter(
+      (env) =>
+        env.name.toLowerCase().includes(s) ||
+        env.handler.toLowerCase().includes(s) ||
+        (env.description?.toLowerCase() ?? '').includes(s) ||
+        (env.critical ? 'critical' : 'non-critical').includes(s) ||
+        (env.createdAt ? formatDistanceToNow(env.createdAt).toLowerCase() : '').includes(s),
+    );
   }, [environments, search]);
 
-  const maxPage = Math.max(0, Math.ceil(filteredEnvironments.length / rowsPerPage) - 1);
+  // Sorting logic
+  const sortedEnvironments = useMemo(() => {
+    const { key, direction } = sort;
+    return [...filteredEnvironments].sort((a, b) => {
+      let aValue: any = a[key as keyof GqlEnvironment];
+      let bValue: any = b[key as keyof GqlEnvironment];
+      if (key === 'type') {
+        aValue = a.critical ? 'Critical' : 'Non-Critical';
+        bValue = b.critical ? 'Critical' : 'Non-Critical';
+      }
+      if (key === 'createdAt') {
+        aValue = a.createdAt;
+        bValue = b.createdAt;
+      }
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const cmp = aValue.localeCompare(bValue);
+        return direction === 'asc' ? cmp : -cmp;
+      }
+      if (aValue instanceof Date && bValue instanceof Date) {
+        return direction === 'asc' ? aValue.getTime() - bValue.getTime() : bValue.getTime() - aValue.getTime();
+      }
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return direction === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+      // Fallback to string compare
+      const cmp = String(aValue ?? '').localeCompare(String(bValue ?? ''));
+      return direction === 'asc' ? cmp : -cmp;
+    });
+  }, [filteredEnvironments, sort]);
+
+  const maxPage = Math.max(0, Math.ceil(sortedEnvironments.length / rowsPerPage) - 1);
   const safePage = Math.min(page, maxPage);
-  const paginatedEnvironments = filteredEnvironments.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage);
+  const paginatedEnvironments = sortedEnvironments.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage);
 
   return (
     <PageContent>
@@ -186,16 +225,45 @@ export default function Environments(scope: OrgScope | ProjectScope): JSX.Elemen
             <ListingTable>
               <ListingTable.Head>
                 <ListingTable.Row>
-                  <ListingTable.Cell>Name</ListingTable.Cell>
-                  <ListingTable.Cell>Handler</ListingTable.Cell>
-                  <ListingTable.Cell>Description</ListingTable.Cell>
-                  <ListingTable.Cell>Type</ListingTable.Cell>
-                  <ListingTable.Cell>Created</ListingTable.Cell>
+                  <ListingTable.Cell>
+                    <ListingTable.SortLabel active={sort.key === 'name'} direction={sort.key === 'name' ? sort.direction : 'asc'} onClick={() => setSort((prev) => ({ key: 'name', direction: prev.key === 'name' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                      Name
+                    </ListingTable.SortLabel>
+                  </ListingTable.Cell>
+                  <ListingTable.Cell>
+                    <ListingTable.SortLabel
+                      active={sort.key === 'handler'}
+                      direction={sort.key === 'handler' ? sort.direction : 'asc'}
+                      onClick={() => setSort((prev) => ({ key: 'handler', direction: prev.key === 'handler' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                      Handler
+                    </ListingTable.SortLabel>
+                  </ListingTable.Cell>
+                  <ListingTable.Cell>
+                    <ListingTable.SortLabel
+                      active={sort.key === 'description'}
+                      direction={sort.key === 'description' ? sort.direction : 'asc'}
+                      onClick={() => setSort((prev) => ({ key: 'description', direction: prev.key === 'description' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                      Description
+                    </ListingTable.SortLabel>
+                  </ListingTable.Cell>
+                  <ListingTable.Cell>
+                    <ListingTable.SortLabel active={sort.key === 'type'} direction={sort.key === 'type' ? sort.direction : 'asc'} onClick={() => setSort((prev) => ({ key: 'type', direction: prev.key === 'type' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                      Type
+                    </ListingTable.SortLabel>
+                  </ListingTable.Cell>
+                  <ListingTable.Cell>
+                    <ListingTable.SortLabel
+                      active={sort.key === 'createdAt'}
+                      direction={sort.key === 'createdAt' ? sort.direction : 'asc'}
+                      onClick={() => setSort((prev) => ({ key: 'createdAt', direction: prev.key === 'createdAt' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                      Created
+                    </ListingTable.SortLabel>
+                  </ListingTable.Cell>
                   <ListingTable.Cell align="right">Action</ListingTable.Cell>
                 </ListingTable.Row>
               </ListingTable.Head>
               <ListingTable.Body>
-                {filteredEnvironments.length === 0 ? (
+                {sortedEnvironments.length === 0 ? (
                   <ListingTable.Row>
                     <ListingTable.Cell colSpan={6} align="center">
                       No records to display
