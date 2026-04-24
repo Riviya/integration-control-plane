@@ -147,6 +147,19 @@ function SecretDrawer({ env, onClose }: { env: GqlEnvironment; onClose: () => vo
   );
 }
 
+enabled = true
+environment = "${envName}"
+project = "<project name>"
+integration = "<integration name>"
+runtime = "<unique id for the runtime>"
+secret = "${secret}"
+#icp_url = "https://<hostname>:9445"`;
+environment = "${envName}"
+project = "<project name>"
+integration = "<integration name>"
+runtime = "<unique id for the runtime>"
+secret = "${secret}"
+#serverUrl="https://<hostname>:9445"`;
 function miToml(envName: string, secret: string): string {
   return `[icp_config]
 enabled = true
@@ -155,7 +168,7 @@ project = "<project name>"
 integration = "<integration name>"
 runtime = "<unique id for the runtime>"
 secret = "${secret}"
-#icp_url = "https://<hostname>:9445"`;
+# icp_url = "https://<hostname>:9445"`;
 }
 
 function biToml(envName: string, secret: string): string {
@@ -165,7 +178,7 @@ project = "<project name>"
 integration = "<integration name>"
 runtime = "<unique id for the runtime>"
 secret = "${secret}"
-#serverUrl="https://<hostname>:9445"`;
+# serverUrl = "https://<hostname>:9445"`;
 }
 
 function AddRuntimeModal({ env, onClose }: { env: GqlEnvironment; onClose: () => void }) {

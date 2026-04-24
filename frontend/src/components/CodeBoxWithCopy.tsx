@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Box, IconButton } from '@wso2/oxygen-ui';
 import { Check, Copy } from '@wso2/oxygen-ui-icons-react';
 
@@ -26,11 +26,30 @@ interface CodeBoxWithCopyProps {
 
 const CodeBoxWithCopy: React.FC<CodeBoxWithCopyProps> = ({ code }) => {
   const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      // Optionally, show a fallback UI or error message
+      // For now, just log the error
+      console.error('Failed to copy to clipboard:', err);
+    }
   };
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
   return (
     <Box sx={{ position: 'relative', my: 1 }}>
       <Box
