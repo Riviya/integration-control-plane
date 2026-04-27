@@ -3382,6 +3382,14 @@ service /graphql on graphqlListener {
             string userIdStr = userIdJson.toString();
             string encodedUsername = check url:encode(userIdStr, "UTF-8");
 
+            string username = userIdStr;
+            string domain = "primary";
+            int? slashIdx = userIdStr.indexOf("/");
+            if slashIdx is int {
+                domain = userIdStr.substring(0, slashIdx);
+                username = userIdStr.substring(slashIdx + 1);
+            }
+
             boolean isAdmin = false;
             http:Response|error detailResponse = mgmtClient->get(string `/management/users/${encodedUsername}`, {
                 "Authorization": string `Bearer ${bearerToken}`,
@@ -3396,14 +3404,14 @@ service /graphql on graphqlListener {
                     }
                 }
             }
-            enrichedUsers.push({username: userIdStr, isAdmin});
+            enrichedUsers.push({username, domain, isAdmin});
         }
 
         log:printDebug("Successfully fetched MI users from runtime", runtimeId = runtimeId, userCount = enrichedUsers.length());
         return {users: enrichedUsers};
     }
 
-    isolated remote function addMIUser(graphql:Context context, string componentId, string runtimeId, string username, string password, boolean isAdmin = false) returns types:MIUserOperationResponse|error {
+    isolated remote function addMIUser(graphql:Context context, string componentId, string runtimeId, string username, string password, boolean isAdmin = false, string domain = "primary") returns types:MIUserOperationResponse|error {
         types:UserContextV2 userContext = check extractUserContext(context);
 
         types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
@@ -3437,8 +3445,8 @@ service /graphql on graphqlListener {
         }
 
         string bearerToken = check storage:issueRuntimeHmacToken(runtimeId);
-        json createPayload = {userId: username, password, isAdmin};
-        log:printInfo("Creating MI user on runtime management API", runtimeId = runtimeId, username = username, isAdmin = isAdmin);
+        json createPayload = {userId: username, password, isAdmin, domain};
+        log:printInfo("Creating MI user on runtime management API", runtimeId = runtimeId, username = username, isAdmin = isAdmin, domain = domain);
 
         http:Response|error createResponse = mgmtClient->post("/management/users", createPayload, {
             "Authorization": string `Bearer ${bearerToken}`,
@@ -3470,7 +3478,7 @@ service /graphql on graphqlListener {
         return {username, status: "Added"};
     }
 
-    isolated remote function deleteMIUser(graphql:Context context, string componentId, string runtimeId, string username) returns types:MIUserOperationResponse|error {
+    isolated remote function deleteMIUser(graphql:Context context, string componentId, string runtimeId, string username, string domain = "primary") returns types:MIUserOperationResponse|error {
         types:UserContextV2 userContext = check extractUserContext(context);
 
         types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
@@ -3503,9 +3511,13 @@ service /graphql on graphqlListener {
         string encodedUsername = check url:encode(trimmedUsername, "UTF-8");
 
         string bearerToken = check storage:issueRuntimeHmacToken(runtimeId);
-        log:printInfo("Deleting MI user on runtime management API", runtimeId = runtimeId, username = trimmedUsername);
+        log:printInfo("Deleting MI user on runtime management API", runtimeId = runtimeId, username = trimmedUsername, domain = domain);
 
-        http:Response|error deleteResponse = mgmtClient->delete(string `/management/users/${encodedUsername}`, (), {
+        string deletePath = domain == "primary"
+            ? string `/management/users/${encodedUsername}`
+            : string `/management/users/${encodedUsername}?domain=${check url:encode(domain, "UTF-8")}`;
+
+        http:Response|error deleteResponse = mgmtClient->delete(deletePath, (), {
             "Authorization": string `Bearer ${bearerToken}`
         });
         if deleteResponse is error {
