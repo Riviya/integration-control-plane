@@ -42,7 +42,7 @@ import {
   Alert,
   Stack,
   TextField,
-  Switch,
+  Checkbox,
   Tooltip,
   Typography,
 } from '@wso2/oxygen-ui';
@@ -537,9 +537,10 @@ export default function Environment({
   // MI users state
   const [selectedRuntimeId, setSelectedRuntimeId] = useState('');
   const [createUserDialogOpen, setCreateUserDialogOpen] = useState(false);
-  const [deleteUserTarget, setDeleteUserTarget] = useState<string | null>(null);
+  const [deleteUserTarget, setDeleteUserTarget] = useState<{ username: string; domain: string } | null>(null);
   const [newUserId, setNewUserId] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newDomain, setNewDomain] = useState('primary');
   const [newIsAdmin, setNewIsAdmin] = useState(false);
   const [createUserError, setCreateUserError] = useState<string | null>(null);
   const [deleteUserError, setDeleteUserError] = useState<string | null>(null);
@@ -567,6 +568,7 @@ export default function Environment({
     setCreateUserDialogOpen(false);
     setNewUserId('');
     setNewPassword('');
+    setNewDomain('primary');
     setNewIsAdmin(false);
     setCreateUserError(null);
   };
@@ -629,6 +631,7 @@ export default function Environment({
                       onClick={() => {
                         setNewUserId('');
                         setNewPassword('');
+                        setNewDomain('primary');
                         setNewIsAdmin(false);
                         setCreateUserError(null);
                         setCreateUserDialogOpen(true);
@@ -703,10 +706,12 @@ export default function Environment({
                       key={u.username}
                       disableGutters
                       secondaryAction={
-                        <Tooltip title={`Delete ${u.username}`}>
-                          <IconButton size="small" color="error" onClick={() => setDeleteUserTarget(u.username)} aria-label={`Delete ${u.username}`}>
-                            <Trash2 size={14} />
-                          </IconButton>
+                        <Tooltip title={u.username === 'admin' && u.domain === 'primary' ? 'Cannot delete the default admin user' : `Delete ${u.username}`}>
+                          <span>
+                            <IconButton size="small" color="error" onClick={() => setDeleteUserTarget({ username: u.username, domain: u.domain })} disabled={u.username === 'admin' && u.domain === 'primary'} aria-label={`Delete ${u.username}`}>
+                              <Trash2 size={14} />
+                            </IconButton>
+                          </span>
                         </Tooltip>
                       }>
                       <ListItemText
@@ -715,6 +720,11 @@ export default function Environment({
                             <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
                               {u.username}
                             </Typography>
+                            {u.domain !== 'primary' && (
+                              <Tooltip title="User from a secondary user store">
+                                <Chip label={u.domain} size="small" variant="outlined" sx={{ fontSize: 10, height: 18 }} />
+                              </Tooltip>
+                            )}
                             {u.isAdmin && <Chip label="Admin" size="small" color="primary" sx={{ fontSize: 10, height: 18 }} />}
                           </Stack>
                         }
@@ -739,7 +749,16 @@ export default function Environment({
             <Stack gap={2} sx={{ mt: 1 }}>
               <TextField label="Username" required fullWidth size="small" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} autoFocus />
               <TextField label="Password" required type="password" fullWidth size="small" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-              <FormControlLabel control={<Switch size="small" checked={newIsAdmin} onChange={(e) => setNewIsAdmin(e.target.checked)} />} label="Admin user" labelPlacement="start" sx={{ m: 0, gap: 1, justifyContent: 'space-between' }} />
+              <TextField
+                label="Domain"
+                fullWidth
+                size="small"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                helperText="Only change this if you have a secondary user store configured in MI and want to create the user in that store."
+                slotProps={{ formHelperText: { sx: { color: 'text.disabled', fontSize: '0.7rem' } } }}
+              />
+              <FormControlLabel control={<Checkbox size="small" checked={newIsAdmin} onChange={(e) => setNewIsAdmin(e.target.checked)} />} label="Admin user" sx={{ m: 0 }} />
             </Stack>
           </DialogContent>
           <DialogActions>
@@ -750,7 +769,7 @@ export default function Environment({
               onClick={() => {
                 setCreateUserError(null);
                 createMiUser.mutate(
-                  { componentId, runtimeId: activeRuntimeId, username: newUserId.trim(), password: newPassword, isAdmin: newIsAdmin },
+                  { componentId, runtimeId: activeRuntimeId, username: newUserId.trim(), password: newPassword, isAdmin: newIsAdmin, domain: newDomain.trim() || 'primary' },
                   {
                     onSuccess: closeCreateUserDialog,
                     onError: (err) => setCreateUserError(err.message ?? 'Failed to create user'),
@@ -779,7 +798,7 @@ export default function Environment({
               </Alert>
             )}
             <DialogContentText>
-              Are you sure you want to delete user <strong>{deleteUserTarget}</strong> from the runtime? This action cannot be undone.
+              Are you sure you want to delete user <strong>{deleteUserTarget?.username}</strong> from the runtime? This action cannot be undone.
             </DialogContentText>
           </DialogContent>
           <DialogActions>
@@ -797,7 +816,7 @@ export default function Environment({
               onClick={() => {
                 if (!deleteUserTarget) return;
                 deleteMiUser.mutate(
-                  { componentId, runtimeId: activeRuntimeId, username: deleteUserTarget },
+                  { componentId, runtimeId: activeRuntimeId, username: deleteUserTarget.username, domain: deleteUserTarget.domain },
                   {
                     onSuccess: () => {
                       setDeleteUserTarget(null);

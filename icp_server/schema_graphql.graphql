@@ -208,8 +208,8 @@ type Mutation {
   updateLogLevel(input: UpdateLogLevelInput!): UpdateLogLevelResponse!
 
   # MI Runtime User Management Mutations
-  addMIUser(componentId: String!, runtimeId: String!, username: String!, password: String!, isAdmin: Boolean): MIUserOperationResponse!
-  deleteMIUser(componentId: String!, runtimeId: String!, username: String!): MIUserOperationResponse!
+  addMIUser(componentId: String!, runtimeId: String!, username: String!, password: String!, isAdmin: Boolean, domain: String): MIUserOperationResponse!
+  deleteMIUser(componentId: String!, runtimeId: String!, username: String!, domain: String): MIUserOperationResponse!
 
   # Org-level Secret Mutations
   createOrgSecret(environmentId: String!, componentId: String): String!
@@ -1418,6 +1418,7 @@ type UpdateLogLevelResponse {
 # ============================================
 type MIUser {
   username: String!
+  domain: String!
   isAdmin: Boolean!
 }
 

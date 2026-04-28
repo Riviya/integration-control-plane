@@ -2385,6 +2385,7 @@ public type UpdateLogLevelResponse record {|
 
 public type MIUser record {|
     string username;
+    string domain;
     boolean isAdmin;
 |};
 
