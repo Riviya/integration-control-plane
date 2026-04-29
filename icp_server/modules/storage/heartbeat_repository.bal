@@ -478,6 +478,10 @@ isolated function writeObservedStateMI(string runtimeId, string componentId, str
     foreach types:MessageStore store in <types:MessageStore[]>artifacts.messageStores {
         entries.push([{artifactName: store.name, artifactType: "message-store"}, {"status": store.state}]);
     }
+    foreach types:CarbonApp app in <types:CarbonApp[]>artifacts.carbonApps {
+        string appState = normalizeCarbonAppState(app.status ?: app.state);
+        entries.push([{artifactName: app.name, artifactType: "carbon-app"}, {"status": appState}]);
+    }
     check batchUpsertReconcileObservedState(runtimeId, componentId, envId, entries);
 }
 
@@ -1481,50 +1485,53 @@ isolated function insertAdditionalMIArtifacts(string runtimeId, types:Heartbeat 
     }
 
     foreach types:CarbonApp app in <types:CarbonApp[]>heartbeat.artifacts.carbonApps {
+        string appState = normalizeCarbonAppState(app.status ?: app.state);
         string? artifactsJson = app.artifacts is types:CarbonAppArtifact[]
             ? (<types:CarbonAppArtifact[]>app.artifacts).toJsonString()
             : ();
+        string? errorMessage = app?.errorMessage;
         if isMSSQL() {
             _ = check dbClient->execute(`
                 MERGE INTO mi_carbon_app_artifacts AS target
-                USING (VALUES (${runtimeId}, ${app.name}, ${app.version}, ${app.state}, ${artifactsJson}))
-                       AS source (runtime_id, app_name, version, state, artifacts)
+                USING (VALUES (${runtimeId}, ${app.name}, ${app.version}, ${appState}, ${errorMessage}, ${artifactsJson}))
+                       AS source (runtime_id, app_name, version, state, error_message, artifacts)
                 ON (target.runtime_id = source.runtime_id AND target.app_name = source.app_name)
                 WHEN MATCHED THEN
-                    UPDATE SET version = source.version, state = source.state, artifacts = source.artifacts, updated_at = CURRENT_TIMESTAMP
+                    UPDATE SET version = source.version, state = source.state, error_message = source.error_message, artifacts = source.artifacts, updated_at = CURRENT_TIMESTAMP
                 WHEN NOT MATCHED THEN
-                    INSERT (runtime_id, app_name, version, state, artifacts)
-                    VALUES (source.runtime_id, source.app_name, source.version, source.state, source.artifacts);
+                    INSERT (runtime_id, app_name, version, state, error_message, artifacts)
+                    VALUES (source.runtime_id, source.app_name, source.version, source.state, source.error_message, source.artifacts);
             `);
         } else if dbType == POSTGRESQL {
             _ = check dbClient->execute(`
                 INSERT INTO mi_carbon_app_artifacts (
-                    runtime_id, app_name, version, state, artifacts
+                    runtime_id, app_name, version, state, error_message, artifacts
                 ) VALUES (
-                    ${runtimeId}, ${app.name}, ${app.version}, ${app.state}, ${artifactsJson}
+                    ${runtimeId}, ${app.name}, ${app.version}, ${appState}, ${errorMessage}, ${artifactsJson}
                 )
                 ON CONFLICT (runtime_id, app_name) DO UPDATE SET
                     version = EXCLUDED.version,
                     state = EXCLUDED.state,
+                    error_message = EXCLUDED.error_message,
                     artifacts = EXCLUDED.artifacts,
                     updated_at = CURRENT_TIMESTAMP
             `);
         } else {
             _ = check dbClient->execute(`
                 INSERT INTO mi_carbon_app_artifacts (
-                    runtime_id, app_name, version, state, artifacts
+                    runtime_id, app_name, version, state, error_message, artifacts
                 ) VALUES (
-                    ${runtimeId}, ${app.name}, ${app.version}, ${app.state}, ${artifactsJson}
+                    ${runtimeId}, ${app.name}, ${app.version}, ${appState}, ${errorMessage}, ${artifactsJson}
                 )
                 ON DUPLICATE KEY UPDATE
                     version = VALUES(version),
                     state = VALUES(state),
+                    error_message = VALUES(error_message),
                     artifacts = VALUES(artifacts),
                     updated_at = CURRENT_TIMESTAMP
             `);
         }
     }
-
     foreach types:DataSource dataSource in <types:DataSource[]>heartbeat.artifacts.dataSources {
         if isMSSQL() {
             _ = check dbClient->execute(`
@@ -1654,6 +1661,11 @@ isolated function insertAdditionalMIArtifacts(string runtimeId, types:Heartbeat 
             `);
         }
     }
+}
+
+isolated function normalizeCarbonAppState(string state) returns string {
+    string normalized = state.trim().toLowerAscii();
+    return normalized == "faulty" ? "Faulty" : "Active";
 }
 
 // Insert runtime log levels for BI components

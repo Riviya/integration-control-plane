@@ -960,6 +960,7 @@ CREATE TABLE mi_carbon_app_artifacts (
     app_name VARCHAR(200) NOT NULL,
     version VARCHAR(50) NULL,
     state ENUM('Active', 'Faulty') NOT NULL DEFAULT 'Active',
+    error_message TEXT NULL, -- Error message when state is Faulty
     artifacts VARCHAR(4000) NULL, -- JSON array serialized as string (convert to JSON in app code when needed)
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

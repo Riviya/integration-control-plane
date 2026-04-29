@@ -1718,6 +1718,7 @@ CREATE TABLE mi_carbon_app_artifacts (
     app_name NVARCHAR (200) NOT NULL,
     version NVARCHAR (50) NULL,
     state NVARCHAR (20) NOT NULL DEFAULT 'Active' CHECK (state IN ('Active', 'Faulty')),
+    error_message NVARCHAR (MAX) NULL, -- Error message when state is Faulty
     artifacts NVARCHAR (4000) NULL, -- JSON array serialized as string
     created_at DATETIME2 NOT NULL DEFAULT GETDATE (),
     updated_at DATETIME2 NOT NULL DEFAULT GETDATE (),

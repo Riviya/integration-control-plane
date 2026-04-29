@@ -907,6 +907,41 @@ service /graphql on graphqlListener {
         return check storage:getCarbonAppsByEnvironmentAndComponent(environmentId, componentId);
     }
 
+    isolated resource function get carbonAppFaultStackTrace(graphql:Context context, string runtimeId, string appName) returns types:CarbonAppFaultStackTrace|error {
+        types:UserContextV2 userContext = check extractUserContext(context);
+        log:printDebug("Fetching Carbon App fault stack trace", userId = userContext.userId, runtimeId = runtimeId, appName = appName);
+
+        types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
+        if runtime is () {
+            log:printWarn("Runtime not found for Carbon App fault stack trace query", userId = userContext.userId, runtimeId = runtimeId);
+            return error("Runtime not found");
+        }
+
+        types:AccessScope scope = auth:buildScopeFromContext(runtime.component.projectId, runtime.component.id, runtime.environment.id);
+
+        if !check auth:hasAnyPermission(userContext.userId, [auth:PERMISSION_INTEGRATION_VIEW, auth:PERMISSION_INTEGRATION_EDIT, auth:PERMISSION_INTEGRATION_MANAGE], scope) {
+            log:printWarn("Attempt to access Carbon App fault stack trace without permission", userId = userContext.userId, runtimeId = runtimeId, appName = appName);
+            return error("Unauthorized");
+        }
+
+        if runtime.status != types:RUNNING {
+            log:printWarn("Runtime is not online for Carbon App fault stack trace query", userId = userContext.userId, runtimeId = runtimeId, status = runtime.status);
+            return error("Runtime is not online");
+        }
+
+        string baseUrl = check storage:buildManagementBaseUrl(runtime.managementHostname, runtime.managementPort);
+        log:printDebug("Calling MI management API for Carbon App fault stack trace", runtimeId = runtimeId, appName = appName, baseUrl = baseUrl);
+        http:Client mgmtClient = check (artifactsApiAllowInsecureTLS
+            ? new (baseUrl, {secureSocket: {enable: false}})
+            : new (baseUrl));
+
+        string hmacToken = check storage:issueRuntimeHmacToken(runtimeId);
+
+        string faultStackTrace = check mi_management:fetchCarbonAppFaultStackTrace(mgmtClient, hmacToken, appName);
+        log:printDebug("Successfully fetched Carbon App fault stack trace", runtimeId = runtimeId, appName = appName);
+        return {runtimeId, appName, faultStackTrace};
+    }
+
     // Get Inbound Endpoints for a specific environment and component
     isolated resource function get inboundEndpointsByEnvironmentAndComponent(graphql:Context context, string environmentId, string componentId) returns types:InboundEndpoint[]|error {
         types:UserContextV2 userContext = check extractUserContext(context);

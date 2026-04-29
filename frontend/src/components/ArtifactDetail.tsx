@@ -40,11 +40,12 @@ import {
   Tabs,
   Typography,
 } from '@wso2/oxygen-ui';
-import { ChevronRight, Maximize2, X } from '@wso2/oxygen-ui-icons-react';
+import { ChevronDown, ChevronRight, Maximize2, X } from '@wso2/oxygen-ui-icons-react';
 import { useEffect, useState } from 'react';
 import { useArtifactTypes, useArtifacts, ARTIFACT_QUERY_MAP, type GqlArtifact } from '../api/queries';
 import { useUpdateArtifactStatus, useUpdateListenerState } from '../api/mutations';
 import { useUpdateArtifactTracingStatus, useUpdateArtifactStatisticsStatus } from '../api/artifactToggleMutations';
+import { gql } from '../api/graphql';
 import SearchField from './SearchField';
 import SyncSwitch from './SyncSwitch';
 import {
@@ -124,7 +125,7 @@ function SelectedTypeArtifacts({ artifacts, artifactType, envId, componentId, qu
     return a.name?.toString().toLowerCase().includes(searchQuery);
   });
   const supportsToggle = ['Endpoint', 'Listener', 'MessageProcessor'].includes(artifactType);
-  const hasStateField = ['Connector'].includes(artifactType);
+  const hasStateField = ['Connector', 'CarbonApp'].includes(artifactType);
   const maxPage = Math.max(0, Math.ceil(filtered.length / rowsPerPage) - 1);
   const safePage = Math.min(page, maxPage);
   const paginatedArtifacts = filtered.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage);
@@ -259,7 +260,13 @@ function SelectedTypeArtifacts({ artifacts, artifactType, envId, componentId, qu
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                         State
                       </Typography>
-                      <Chip label={(a.state ?? '—').toString().charAt(0).toUpperCase() + (a.state ?? '—').toString().slice(1).toLowerCase()} size="small" variant="outlined" color={enabled ? 'success' : 'default'} sx={{ fontSize: '0.875rem' }} />
+                      <Chip
+                        label={(a.state ?? '—').toString().charAt(0).toUpperCase() + (a.state ?? '—').toString().slice(1).toLowerCase()}
+                        size="small"
+                        variant="outlined"
+                        color={artifactType === 'CarbonApp' ? ((a.state ?? '').toString() === 'Active' ? 'success' : (a.state ?? '').toString() === 'Faulty' ? 'error' : 'default') : enabled ? 'success' : 'default'}
+                        sx={{ fontSize: '0.875rem' }}
+                      />
                     </Grid>
                   )}
                   {supportsToggle && (
@@ -378,9 +385,19 @@ export function ArtifactTypeSelector({ envId, componentId, onSelectArtifact }: {
 
 const drawerSx = { '& .MuiDrawer-paper': { width: '60%', maxWidth: 700, minWidth: 400, position: 'fixed', top: 64, height: 'calc(100% - 64px)', borderLeft: '1px solid', borderColor: 'divider' } };
 const headerSx = { px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' };
+const CARBON_APP_FAULT_STACKTRACE_QUERY = `
+  query GetCarbonAppFaultStackTrace($runtimeId: String!, $appName: String!) {
+    carbonAppFaultStackTrace(runtimeId: $runtimeId, appName: $appName) {
+      faultStackTrace
+    }
+  }
+`;
 
 export function ArtifactDetail({ selected, onClose }: { selected: SelectedArtifact | null; onClose: () => void }) {
   const [activeTabIndex, setActiveTabIndex] = useState(0);
+  const [stacktraceExpanded, setStacktraceExpanded] = useState(false);
+  const [stacktraceLoading, setStacktraceLoading] = useState(false);
+  const [stacktrace, setStacktrace] = useState<string | null>(null);
   const artifactKey = selected ? `${selected.artifactType}-${selected.artifact.name}` : '';
   useEffect(() => {
     if (selected?.initialTab) {
@@ -390,6 +407,10 @@ export function ArtifactDetail({ selected, onClose }: { selected: SelectedArtifa
     } else {
       setActiveTabIndex(0);
     }
+
+    setStacktraceExpanded(false);
+    setStacktraceLoading(false);
+    setStacktrace(null);
   }, [artifactKey, selected?.artifactType, selected?.initialTab]);
 
   if (!selected) return null;
@@ -447,6 +468,49 @@ export function ArtifactDetail({ selected, onClose }: { selected: SelectedArtifa
     }
   };
 
+  const isFaultyCarbon = artifactType === 'CarbonApp' && artifact.state?.toString() === 'Faulty';
+  const errorMessage = isFaultyCarbon ? artifact.errorMessage?.toString() : null;
+  const errorLines = errorMessage
+    ? errorMessage
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : [];
+
+  const loadStacktrace = async () => {
+    if (stacktrace || stacktraceLoading) return;
+    setStacktraceLoading(true);
+    try {
+      const runtimeId = (artifact.runtimes as Array<{ runtimeId: string }> | undefined)?.[0]?.runtimeId;
+      const appName = artifact.name?.toString();
+
+      if (!runtimeId || !appName) {
+        setStacktrace('No stacktrace available. Missing runtime or Carbon App name.');
+        return;
+      }
+
+      const result = await gql<{ carbonAppFaultStackTrace: { faultStackTrace: string } }>(CARBON_APP_FAULT_STACKTRACE_QUERY, {
+        runtimeId,
+        appName,
+      });
+
+      setStacktrace(result.carbonAppFaultStackTrace?.faultStackTrace || 'No stacktrace available.');
+    } catch (error) {
+      console.error('Error fetching carbon app stacktrace:', error);
+      setStacktrace('Failed to load stacktrace.');
+    } finally {
+      setStacktraceLoading(false);
+    }
+  };
+
+  const handleStacktraceToggle = async () => {
+    const expanded = !stacktraceExpanded;
+    setStacktraceExpanded(expanded);
+    if (expanded) {
+      await loadStacktrace();
+    }
+  };
+
   return (
     <Drawer anchor="right" open onClose={onClose} variant="persistent" sx={drawerSx}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={headerSx}>
@@ -462,6 +526,63 @@ export function ArtifactDetail({ selected, onClose }: { selected: SelectedArtifa
           </IconButton>
         </Stack>
       </Stack>
+      {errorMessage && (
+        <Box sx={{ px: 2, pt: 1.5, pb: 3, backgroundColor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Stack spacing={0} alignItems="flex-start">
+            <Chip label="Faulty" size="small" color="error" sx={{ mt: 0.5 }} />
+            <Stack spacing={1.5} sx={{ width: '100%', minWidth: 0, mt: 3 }}>
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'block', mb: 0.75, color: 'text.primary' }}>
+                  Error Message
+                </Typography>
+                <Box sx={{ m: 0 }}>
+                  {(errorLines.length > 0 ? errorLines : [errorMessage]).map((line, idx) => (
+                    <Typography key={`${line}-${idx}`} variant="body2" sx={{ lineHeight: 1.5, color: 'text.primary' }}>
+                      {line}
+                    </Typography>
+                  ))}
+                </Box>
+              </Box>
+
+              <Box>
+                <Stack direction="row" alignItems="center" gap={0.5} sx={{ cursor: 'pointer', py: 0.5 }} onClick={handleStacktraceToggle}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                    Stacktrace
+                  </Typography>
+                  <ChevronDown size={16} style={{ transform: stacktraceExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 120ms ease' }} />
+                </Stack>
+                {stacktraceExpanded &&
+                  (stacktraceLoading ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>
+                      Loading stacktrace...
+                    </Typography>
+                  ) : (
+                    <Box
+                      component="pre"
+                      sx={{
+                        m: 0,
+                        p: 1,
+                        fontSize: '0.75rem',
+                        lineHeight: 1.4,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace',
+                        bgcolor: 'background.paper',
+                        borderRadius: 1,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        color: 'text.primary',
+                      }}>
+                      <Box component="code" sx={{ fontFamily: 'inherit', fontSize: 'inherit', color: 'inherit' }}>
+                        {stacktrace ?? 'No stacktrace available.'}
+                      </Box>
+                    </Box>
+                  ))}
+              </Box>
+            </Stack>
+          </Stack>
+        </Box>
+      )}
       <Box sx={{ px: 2 }}>
         {tabs.length > 0 && (
           <>

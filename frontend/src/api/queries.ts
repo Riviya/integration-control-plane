@@ -426,7 +426,12 @@ const ARTIFACT_QUERY_MAP: Record<string, { queryName: string; field: string; fie
   },
   Task: { queryName: 'tasksByEnvironmentAndComponent', field: 'tasksByEnvironmentAndComponent', fields: 'name, group, state', gqlFields: 'name, class, group, state, stateInSync, carbonApp, runtimes { runtimeId, runtimeName, status }' },
   LocalEntry: { queryName: 'localEntriesByEnvironmentAndComponent', field: 'localEntriesByEnvironmentAndComponent', fields: 'name, type', gqlFields: 'name, type, value, state, stateInSync, runtimes { runtimeId, runtimeName, status }' },
-  CarbonApp: { queryName: 'carbonAppsByEnvironmentAndComponent', field: 'carbonAppsByEnvironmentAndComponent', fields: 'name, version', gqlFields: 'name, version, state, artifacts { name, type }, runtimes { runtimeId, runtimeName, status }' },
+  CarbonApp: {
+    queryName: 'carbonAppsByEnvironmentAndComponent',
+    field: 'carbonAppsByEnvironmentAndComponent',
+    fields: 'name, version, state',
+    gqlFields: 'name, version, state, errorMessage, artifacts { name, type }, runtimes { runtimeId, runtimeName, status }',
+  },
   Connector: {
     queryName: 'connectorsByEnvironmentAndComponent',
     field: 'connectorsByEnvironmentAndComponent',

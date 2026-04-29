@@ -513,6 +513,7 @@ type CarbonApp {
   name: String!
   version: String
   state: String!
+  errorMessage: String
   artifacts: [CarbonAppArtifact!]
   runtimes: [ArtifactRuntimeInfo]
 }
