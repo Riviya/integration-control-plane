@@ -635,6 +635,7 @@ public type CarbonAppRecordInDB record {
     string app_name;
     string version = "";
     ArtifactState state;
+    string? error_message?;
 };
 
 public type RegistryResourceRecordInDB record {
@@ -1042,6 +1043,11 @@ public type CarbonApp record {
         name: "app_state"
     }
     string state = "Active"; // "Active", "Faulty"
+    string status?;
+    @sql:Column {
+        name: "error_message"
+    }
+    string? errorMessage?;
     // Artifacts packaged within the Carbon App (from heartbeat payload)
     CarbonAppArtifact[] artifacts?;
     string[] runtimeIds?;
@@ -1052,6 +1058,13 @@ public type CarbonApp record {
 public type CarbonAppArtifact record {
     string name;
     string 'type; // e.g., "api", "endpoint"
+};
+
+// Response type for Carbon App fault stack trace query
+public type CarbonAppFaultStackTrace record {
+    string runtimeId;
+    string appName;
+    string faultStackTrace;
 };
 
 public type DataSource record {

@@ -517,6 +517,28 @@ public isolated function fetchRegistryResourceProperties(http:Client mgmtClient,
     return {count: respResult.count, properties: props};
 }
 
+// Fetch the fault stack trace for a faulty Carbon App from the MI management API
+// GET /management/applications/{appName}/fault
+public isolated function fetchCarbonAppFaultStackTrace(http:Client mgmtClient, string hmacToken, string appName) returns string|error {
+    string encodedAppName = check url:encode(appName, "UTF-8");
+    string path = string `${MGMT_API_PATH}/applications/${encodedAppName}/fault`;
+    log:printDebug("Calling MI management API for Carbon App fault stacktrace", path = path);
+    MgmtCarbonAppFaultResponse respResult = check mgmtClient->get(path, {
+        [HEADER_AUTHORIZATION]: string `Bearer ${hmacToken}`,
+        [HEADER_ACCEPT]: CONTENT_TYPE_JSON
+    });
+    string? stackTrace = respResult?.faultStackTrace;
+    if stackTrace is () {
+        log:printWarn("No fault stack trace found for Carbon App", appName = appName);
+        return error(string `No fault stack trace available for Carbon App: ${appName}`);
+    }
+    if stackTrace.trim().length() == 0 {
+        log:printWarn("Empty fault stack trace found for Carbon App", appName = appName);
+        return error(string `No fault stack trace available for Carbon App: ${appName}`);
+    }
+    return stackTrace;
+}
+
 public isolated function createRegistryManagementClient(types:Runtime runtime, string runtimeId, boolean allowInsecureTLS) returns types:RegistryApiClient|error {
     log:printDebug("Creating registry management client", runtimeId = runtimeId, hostname = runtime.managementHostname, port = runtime.managementPort);
 
