@@ -589,7 +589,9 @@ export default function AppLayout(): JSX.Element {
             }}>
             Cookie Policy
           </Footer.Link>
-          <Footer.Link href="#support">Support</Footer.Link>
+          <Footer.Link href="https://wso2.com/support" target="_blank" rel="noreferrer">
+            Support
+          </Footer.Link>
           <Footer.Copyright>&copy; {new Date().getFullYear()}, WSO2 LLC.</Footer.Copyright>
         </Footer>
       </AppShell.Footer>
