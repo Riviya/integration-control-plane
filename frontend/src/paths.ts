@@ -37,6 +37,10 @@ export function rootUrl(): string {
   return '/';
 }
 
+export function errorUrl(type?: string): string {
+  return type ? `/error?type=${encodeURIComponent(type)}` : '/error';
+}
+
 export function orgUrl(orgHandler: string): string {
   return `/organizations/${orgHandler}`;
 }
