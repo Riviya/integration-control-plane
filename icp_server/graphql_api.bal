@@ -568,6 +568,7 @@ isolated function deleteLoggerMI(types:UserContextV2 userContext, types:DeleteLo
     }
 
     if successCount == 0 {
+        log:printError("Failed to delete logger on all runtimes", loggerName = loggerName, failureCount = failureCount);
         return {
             success: false,
             message: string `Failed to delete logger ${loggerName} on all ${failureCount} runtime(s)`
@@ -1867,7 +1868,22 @@ service /graphql on graphqlListener {
             return error("At least one runtime ID must be provided");
         }
         if input.loggerName.trim().length() == 0 {
+            log:printWarn("Empty logger name provided", userId = userContext.userId);
             return error("Logger name is required");
+        }
+
+        string[] nonMiIds = [];
+        foreach string runtimeId in input.runtimeIds {
+            types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
+            if runtime is () {
+                continue;
+            }
+            if runtime.component.componentType != types:MI {
+                nonMiIds.push(runtimeId);
+            }
+        }
+        if nonMiIds.length() > 0 {
+            return error(string `Only MI runtimes supported, invalid runtimeIds: ${nonMiIds.toString()}`);
         }
 
         return check deleteLoggerMI(userContext, input);

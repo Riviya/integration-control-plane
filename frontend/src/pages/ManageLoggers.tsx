@@ -88,16 +88,17 @@ function LoggersList({ environmentId, componentId, componentType }: { environmen
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [runtimeDrawer, setRuntimeDrawer] = useState<{ loggerName: string; runtimeIds: string[] } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ loggerName: string; runtimeIds: string[] } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleDeleteLogger = async () => {
     if (!deleteConfirm) return;
+    setDeleteError(null);
     try {
       await deleteLogger.mutateAsync({ runtimeIds: deleteConfirm.runtimeIds, loggerName: deleteConfirm.loggerName });
       await refetch();
-    } catch (err) {
-      console.error('Failed to delete logger:', err);
-    } finally {
       setDeleteConfirm(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -214,11 +215,7 @@ function LoggersList({ environmentId, componentId, componentType }: { environmen
                         View Runtimes
                       </Button>
                       {isMI && (
-                        <IconButton
-                          size="small"
-                          color="error"
-                          aria-label="Delete logger"
-                          onClick={() => setDeleteConfirm({ loggerName: logger.loggerName, runtimeIds: logger.runtimeIds })}>
+                        <IconButton size="small" color="error" aria-label="Delete logger" onClick={() => setDeleteConfirm({ loggerName: logger.loggerName, runtimeIds: logger.runtimeIds })}>
                           <Trash2 size={16} />
                         </IconButton>
                       )}
@@ -287,15 +284,31 @@ function LoggersList({ environmentId, componentId, componentType }: { environmen
         </Drawer>
       )}
       {deleteConfirm && (
-        <Dialog open onClose={() => setDeleteConfirm(null)} maxWidth="xs" fullWidth>
+        <Dialog
+          open
+          onClose={() => {
+            setDeleteConfirm(null);
+            setDeleteError(null);
+          }}
+          maxWidth="xs"
+          fullWidth>
           <DialogTitle>Delete Logger</DialogTitle>
           <DialogContent>
-            <Typography>
-              Are you sure you want to delete logger <strong>{deleteConfirm.loggerName}</strong> from {deleteConfirm.runtimeIds.length} runtime(s)?
-            </Typography>
+            <Stack spacing={2}>
+              <Typography>
+                Are you sure you want to delete logger <strong>{deleteConfirm.loggerName}</strong> from {deleteConfirm.runtimeIds.length} runtime(s)?
+              </Typography>
+              {deleteError && <Alert severity="error">{deleteError}</Alert>}
+            </Stack>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setDeleteConfirm(null)} color="inherit" disabled={deleteLogger.isPending}>
+            <Button
+              onClick={() => {
+                setDeleteConfirm(null);
+                setDeleteError(null);
+              }}
+              color="inherit"
+              disabled={deleteLogger.isPending}>
               Cancel
             </Button>
             <Button onClick={handleDeleteLogger} variant="contained" color="error" disabled={deleteLogger.isPending}>
