@@ -274,11 +274,7 @@ goto end
 :runServer
 call :prepareRun
 if errorlevel 1 goto end
-set "QUOTED_JAVA_OPTS="
-if defined JAVA_OPTS (
-    for %%O in (%JAVA_OPTS%) do set "QUOTED_JAVA_OPTS=!QUOTED_JAVA_OPTS! "%%O""
-)
-java !QUOTED_JAVA_OPTS! -jar "!JAR_FILE!" !FORWARD_ARGS!
+java !JAVA_OPTS! -jar "!JAR_FILE!" !FORWARD_ARGS!
 if exist "!PID_FILE!" del /f /q "!PID_FILE!" >nul 2>&1
 
 :end
