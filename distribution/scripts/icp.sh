@@ -65,6 +65,23 @@ detect_java_opts() {
             "-Dio.netty.handler.ssl.noOpenSsl=true"
         )
     fi
+
+    local arch os
+    arch="$(uname -m 2>/dev/null)"
+    os="$(uname -s 2>/dev/null)"
+    case "$arch" in
+        aarch64|arm64)
+            case "$os" in
+                MINGW*|MSYS*|CYGWIN*)
+                    echo "ARM Windows detected - disabling native Netty tcnative libraries"
+                    JAVA_OPTS+=(
+                        "-Dio.netty.transport.noNative=true"
+                        "-Dio.netty.handler.ssl.noOpenSsl=true"
+                    )
+                    ;;
+            esac
+            ;;
+    esac
 }
 
 is_running() {

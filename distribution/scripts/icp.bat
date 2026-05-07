@@ -27,6 +27,14 @@ set PID_FILE=!PARENT_DIR!\icp.pid
 set LOG_DIR=!PARENT_DIR!\logs
 set LOG_FILE=!LOG_DIR!\icp.log
 set COMMAND=run
+set "JAVA_OPTS="
+if /I "!PROCESSOR_ARCHITECTURE!"=="ARM64" (
+    echo ARM Windows detected - disabling native Netty tcnative libraries
+    set "JAVA_OPTS=-Dio.netty.transport.noNative=true -Dio.netty.handler.ssl.noOpenSsl=true"
+) else if /I "!PROCESSOR_ARCHITEW6432!"=="ARM64" (
+    echo ARM Windows detected - disabling native Netty tcnative libraries
+    set "JAVA_OPTS=-Dio.netty.transport.noNative=true -Dio.netty.handler.ssl.noOpenSsl=true"
+)
 set "ARG=%~1"
 set "NORMALIZED_ARG=!ARG!"
 set "CANDIDATE="
@@ -172,7 +180,8 @@ set "ICP_JAR_FILE=!JAR_FILE!"
 set "ICP_LOG_FILE=!LOG_FILE!"
 set "ICP_ERR_LOG_FILE=!LOG_FILE!.err"
 set "ICP_SCRIPT_DIR=!SCRIPT_DIR!"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$jar = $env:ICP_JAR_FILE; $log = $env:ICP_LOG_FILE; $errLog = $env:ICP_ERR_LOG_FILE; $wd = $env:ICP_SCRIPT_DIR; $appArgs = @(); if ($env:ICP_APP_ARGS_JSON -and $env:ICP_APP_ARGS_JSON -ne '[]') { $appArgs = @(ConvertFrom-Json -InputObject $env:ICP_APP_ARGS_JSON) }; $javaArgs = @('-jar', $jar) + $appArgs; $p = Start-Process -FilePath 'java' -ArgumentList $javaArgs -WorkingDirectory $wd -RedirectStandardOutput $log -RedirectStandardError $errLog -PassThru -WindowStyle Hidden; $p.Id" > "!PID_FILE!"
+set "ICP_JAVA_OPTS=!JAVA_OPTS!"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$jar = $env:ICP_JAR_FILE; $log = $env:ICP_LOG_FILE; $errLog = $env:ICP_ERR_LOG_FILE; $wd = $env:ICP_SCRIPT_DIR; $appArgs = @(); if ($env:ICP_APP_ARGS_JSON -and $env:ICP_APP_ARGS_JSON -ne '[]') { $appArgs = @(ConvertFrom-Json -InputObject $env:ICP_APP_ARGS_JSON) }; $javaOpts = @(); if ($env:ICP_JAVA_OPTS) { $javaOpts = $env:ICP_JAVA_OPTS -split '\s+' | Where-Object { $_ } }; $javaArgs = $javaOpts + @('-jar', $jar) + $appArgs; $p = Start-Process -FilePath 'java' -ArgumentList $javaArgs -WorkingDirectory $wd -RedirectStandardOutput $log -RedirectStandardError $errLog -PassThru -WindowStyle Hidden; $p.Id" > "!PID_FILE!"
 set /p SERVER_PID=<"!PID_FILE!"
 if not defined SERVER_PID (
     echo Failed to start ICP Server
@@ -265,7 +274,7 @@ goto end
 :runServer
 call :prepareRun
 if errorlevel 1 goto end
-java -jar "!JAR_FILE!" !FORWARD_ARGS!
+java !JAVA_OPTS! -jar "!JAR_FILE!" !FORWARD_ARGS!
 if exist "!PID_FILE!" del /f /q "!PID_FILE!" >nul 2>&1
 
 :end
