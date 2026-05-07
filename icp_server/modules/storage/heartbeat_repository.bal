@@ -797,20 +797,13 @@ isolated function insertRuntimeArtifacts(string runtimeId, types:Heartbeat heart
     check insertRuntimeLogLevels(runtimeId, heartbeat);
 }
 
-// Delete existing artifacts
-isolated function deleteExistingArtifacts(string runtimeId) returns error? {
-    _ = check dbClient->execute(`DELETE FROM bi_service_artifacts WHERE runtime_id = ${runtimeId}`);
-    _ = check dbClient->execute(`DELETE FROM bi_runtime_listener_artifacts WHERE runtime_id = ${runtimeId}`);
-    _ = check dbClient->execute(`DELETE FROM bi_service_resource_artifacts WHERE runtime_id = ${runtimeId}`);
-    _ = check dbClient->execute(`DELETE FROM bi_automation_artifacts WHERE runtime_id = ${runtimeId}`);
-    _ = check dbClient->execute(`DELETE FROM bi_automation_execution_history WHERE runtime_id = ${runtimeId}`);
-    _ = check dbClient->execute(`DELETE FROM bi_runtime_log_levels WHERE runtime_id = ${runtimeId}`);
+isolated function deleteMIArtifacts(string runtimeId) returns error? {
     _ = check dbClient->execute(`DELETE FROM mi_api_resource_artifacts WHERE runtime_id = ${runtimeId}`);
     _ = check dbClient->execute(`DELETE FROM mi_api_artifacts WHERE runtime_id = ${runtimeId}`);
-    _ = check dbClient->execute(`DELETE FROM mi_proxy_service_artifacts WHERE runtime_id = ${runtimeId}`);
     _ = check dbClient->execute(`DELETE FROM mi_proxy_service_endpoint_artifacts WHERE runtime_id = ${runtimeId}`);
-    _ = check dbClient->execute(`DELETE FROM mi_endpoint_artifacts WHERE runtime_id = ${runtimeId}`);
+    _ = check dbClient->execute(`DELETE FROM mi_proxy_service_artifacts WHERE runtime_id = ${runtimeId}`);
     _ = check dbClient->execute(`DELETE FROM mi_endpoint_attribute_artifacts WHERE runtime_id = ${runtimeId}`);
+    _ = check dbClient->execute(`DELETE FROM mi_endpoint_artifacts WHERE runtime_id = ${runtimeId}`);
     _ = check dbClient->execute(`DELETE FROM mi_inbound_endpoint_artifacts WHERE runtime_id = ${runtimeId}`);
     _ = check dbClient->execute(`DELETE FROM mi_sequence_artifacts WHERE runtime_id = ${runtimeId}`);
     _ = check dbClient->execute(`DELETE FROM mi_task_artifacts WHERE runtime_id = ${runtimeId}`);
@@ -825,8 +818,21 @@ isolated function deleteExistingArtifacts(string runtimeId) returns error? {
     _ = check dbClient->execute(`DELETE FROM mi_registry_resource_artifacts WHERE runtime_id = ${runtimeId}`);
 }
 
+// Delete existing artifacts
+isolated function deleteExistingArtifacts(string runtimeId) returns error? {
+    _ = check dbClient->execute(`DELETE FROM bi_service_artifacts WHERE runtime_id = ${runtimeId}`);
+    _ = check dbClient->execute(`DELETE FROM bi_runtime_listener_artifacts WHERE runtime_id = ${runtimeId}`);
+    _ = check dbClient->execute(`DELETE FROM bi_service_resource_artifacts WHERE runtime_id = ${runtimeId}`);
+    _ = check dbClient->execute(`DELETE FROM bi_automation_artifacts WHERE runtime_id = ${runtimeId}`);
+    _ = check dbClient->execute(`DELETE FROM bi_automation_execution_history WHERE runtime_id = ${runtimeId}`);
+    _ = check dbClient->execute(`DELETE FROM bi_runtime_log_levels WHERE runtime_id = ${runtimeId}`);
+    check deleteMIArtifacts(runtimeId);
+}
+
 // Insert MI artifacts
 isolated function insertMIArtifacts(string runtimeId, types:Heartbeat heartbeat) returns error? {
+    check deleteMIArtifacts(runtimeId);
+
     foreach types:RestApi api in <types:RestApi[]>heartbeat.artifacts.apis {
         string artifactId = uuid:createType4AsString();
         string? compositeApp = api?.compositeApp;
