@@ -798,6 +798,7 @@ isolated function insertRuntimeArtifacts(string runtimeId, types:Heartbeat heart
 }
 
 isolated function deleteMIArtifacts(string runtimeId) returns error? {
+    log:printDebug("Deleting MI artifacts for runtime: " + runtimeId);
     _ = check dbClient->execute(`DELETE FROM mi_api_resource_artifacts WHERE runtime_id = ${runtimeId}`);
     _ = check dbClient->execute(`DELETE FROM mi_api_artifacts WHERE runtime_id = ${runtimeId}`);
     _ = check dbClient->execute(`DELETE FROM mi_proxy_service_endpoint_artifacts WHERE runtime_id = ${runtimeId}`);
@@ -832,7 +833,8 @@ isolated function deleteExistingArtifacts(string runtimeId) returns error? {
 // Insert MI artifacts
 isolated function insertMIArtifacts(string runtimeId, types:Heartbeat heartbeat) returns error? {
     check deleteMIArtifacts(runtimeId);
-
+    
+    log:printDebug("Inserting MI artifacts for runtime: " + runtimeId);
     foreach types:RestApi api in <types:RestApi[]>heartbeat.artifacts.apis {
         string artifactId = uuid:createType4AsString();
         string? compositeApp = api?.compositeApp;
