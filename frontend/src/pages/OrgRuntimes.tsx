@@ -214,7 +214,7 @@ function AddRuntimeModal({ env, onClose }: { env: GqlEnvironment; onClose: () =>
               Copy this secret now. It will not be shown again.
             </Alert>
             <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-              <Tab label="BI" />
+              <Tab label="Default" />
               <Tab label="MI" />
             </Tabs>
             <DialogContentText sx={{ mb: 1 }}>
@@ -233,7 +233,7 @@ function AddRuntimeModal({ env, onClose }: { env: GqlEnvironment; onClose: () =>
                 </DialogContentText>
                 <CodeBoxWithCopy code={`import wso2/icp.runtime.bridge as _;`} />
                 <Alert severity="info" sx={{ mt: 2 }}>
-                  The above configuration is for runtimes using the <strong>BI</strong> integration. If you're using the <strong>MI</strong> integration, switch to the MI tab to see the correct configuration.
+                  The above configuration is for runtimes using the <strong>Default</strong> integration. If you're using the <strong>MI</strong> integration, switch to the MI tab to see the correct configuration.
                 </Alert>
               </>
             )}
@@ -451,7 +451,7 @@ function EnvironmentRuntimeCard({
                     <ListingTable.Row key={r.runtimeId}>
                       <ListingTable.Cell>{r.runtimeName || r.runtimeId}</ListingTable.Cell>
                       <ListingTable.Cell>{r.runtimeId}</ListingTable.Cell>
-                      <ListingTable.Cell>{r.runtimeType}</ListingTable.Cell>
+                      <ListingTable.Cell>{r.runtimeType === 'BI' ? 'Default' : r.runtimeType}</ListingTable.Cell>
                       <ListingTable.Cell>{r.component?.displayName ?? '—'}</ListingTable.Cell>
                       <ListingTable.Cell>
                         <Chip label={r.status} size="small" color={r.status === 'RUNNING' ? 'success' : 'default'} />
