@@ -120,10 +120,14 @@ type Query {
     environmentId: String!
     componentId: String!
   ): [DataSource!]!
-  carbonAppsByEnvironmentAndComponent(
+  compositeAppsByEnvironmentAndComponent(
     environmentId: String!
     componentId: String!
-  ): [CarbonApp!]!
+  ): [CompositeApp!]!
+  compositeAppFaultStackTrace(
+    runtimeId: String!
+    appName: String!
+  ): CompositeAppFaultStackTrace
   connectorsByEnvironmentAndComponent(
     environmentId: String!
     componentId: String!
@@ -206,10 +210,11 @@ type Mutation {
 
   # Logger Control Mutations
   updateLogLevel(input: UpdateLogLevelInput!): UpdateLogLevelResponse!
+  deleteLogger(input: DeleteLoggerInput!): DeleteLoggerResponse!
 
   # MI Runtime User Management Mutations
-  addMIUser(componentId: String!, runtimeId: String!, username: String!, password: String!, isAdmin: Boolean): MIUserOperationResponse!
-  deleteMIUser(componentId: String!, runtimeId: String!, username: String!): MIUserOperationResponse!
+  addMIUser(componentId: String!, runtimeId: String!, username: String!, password: String!, isAdmin: Boolean, domain: String): MIUserOperationResponse!
+  deleteMIUser(componentId: String!, runtimeId: String!, username: String!, domain: String): MIUserOperationResponse!
 
   # Org-level Secret Mutations
   createOrgSecret(environmentId: String!, componentId: String): String!
@@ -354,7 +359,7 @@ type RestApi {
   state: ArtifactState!
   tracing: String!
   statistics: String!
-  carbonApp: String
+  compositeApp: String
   resources: [ApiResource!]!
 }
 
@@ -374,7 +379,7 @@ type ProxyService {
   state: ArtifactState!
   tracing: String!
   statistics: String!
-  carbonApp: String
+  compositeApp: String
   endpoints: [String!]
 }
 
@@ -387,7 +392,7 @@ type MIEndpoint {
   state: ArtifactState!
   tracing: String!
   statistics: String!
-  carbonApp: String
+  compositeApp: String
   attributes: [EndpointAttribute!]
 }
 
@@ -410,7 +415,7 @@ type InboundEndpoint {
   statistics: String
   onError: String
   tracing: String!
-  carbonApp: String
+  compositeApp: String
 }
 
 # ============================================
@@ -423,7 +428,7 @@ type Sequence {
   state: ArtifactState!
   tracing: String!
   statistics: String!
-  carbonApp: String
+  compositeApp: String
 }
 
 # ============================================
@@ -434,7 +439,7 @@ type Task {
   class: String
   group: String
   state: ArtifactState!
-  carbonApp: String
+  compositeApp: String
   runtimes: [ArtifactRuntimeInfo]
 }
 
@@ -446,7 +451,7 @@ type Template {
   type: String!
   statistics: String!
   tracing: String!
-  carbonApp: String
+  compositeApp: String
 }
 
 # ============================================
@@ -457,7 +462,7 @@ type MessageStore {
   type: String!
   size: Int!
   state: ArtifactState!
-  carbonApp: String
+  compositeApp: String
 }
 
 # ============================================
@@ -468,7 +473,7 @@ type MessageProcessor {
   type: String!
   class: String
   state: ArtifactState!
-  carbonApp: String
+  compositeApp: String
 }
 
 # ============================================
@@ -479,7 +484,7 @@ type LocalEntry {
   type: String!
   value: String
   state: ArtifactState!
-  carbonApp: String
+  compositeApp: String
   runtimes: [ArtifactRuntimeInfo]
 }
 
@@ -491,7 +496,7 @@ type DataService {
   description: String
   wsdl: String
   state: ArtifactState!
-  carbonApp: String
+  compositeApp: String
 }
 
 # ============================================
@@ -507,20 +512,28 @@ type DataSource {
 }
 
 # ============================================
-# CarbonApp Type - MI Carbon Application Artifacts
+# CompositeApp Type - MI Composite Application Artifacts
 # ============================================
-type CarbonApp {
+type CompositeApp {
   name: String!
   version: String
   state: String!
-  artifacts: [CarbonAppArtifact!]
+  errorMessage: String
+  faultStackTrace: String
+  artifacts: [CompositeAppArtifact!]
   runtimes: [ArtifactRuntimeInfo]
 }
 
+type CompositeAppFaultStackTrace {
+  runtimeId: String!
+  appName: String!
+  faultStackTrace: String!
+}
+
 # ============================================
-# CarbonAppArtifact Type - Artifact within Carbon App
+# CompositeAppArtifact Type - Artifact within Composite App
 # ============================================
-type CarbonAppArtifact {
+type CompositeAppArtifact {
   name: String!
   type: String!
 }
@@ -1414,10 +1427,24 @@ type UpdateLogLevelResponse {
 }
 
 # ============================================
+# Delete Logger Input / Response
+# ============================================
+input DeleteLoggerInput {
+  runtimeIds: [String!]!
+  loggerName: String!
+}
+
+type DeleteLoggerResponse {
+  success: Boolean!
+  message: String!
+}
+
+# ============================================
 # MI Runtime User Management Types
 # ============================================
 type MIUser {
   username: String!
+  domain: String!
   isAdmin: Boolean!
 }
 

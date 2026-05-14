@@ -475,6 +475,113 @@ isolated function updateLogLevelMI(types:UserContextV2 userContext, types:Update
     };
 }
 
+isolated function deleteLoggerMI(types:UserContextV2 userContext, types:DeleteLoggerInput input) returns types:DeleteLoggerResponse|error {
+    string loggerName = input.loggerName;
+    log:printDebug("deleteLoggerMI: validating runtimes and permissions", userId = userContext.userId, loggerName = loggerName, runtimeIds = input.runtimeIds);
+
+    types:ValidatedRuntime[] validatedRuntimes = [];
+
+    foreach string runtimeId in input.runtimeIds {
+        types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
+        if runtime is () {
+            log:printWarn("Runtime not found, skipping", runtimeId = runtimeId, loggerName = loggerName);
+            continue;
+        }
+
+        types:AccessScope scope = auth:buildScopeFromContext(
+                runtime.component.projectId,
+                runtime.component.id,
+                runtime.environment.id
+        );
+
+        if !check auth:hasPermission(userContext.userId, auth:PERMISSION_INTEGRATION_MANAGE, scope) {
+            log:printWarn("User lacks permission to delete logger on runtime", userId = userContext.userId, runtimeId = runtimeId, loggerName = loggerName);
+            return error(string `Access denied: insufficient permissions to delete logger on runtime ${runtimeId}`);
+        }
+
+        log:printDebug("Runtime validated for logger deletion", runtimeId = runtimeId, loggerName = loggerName, componentId = runtime.component.id);
+        validatedRuntimes.push({
+            runtimeId: runtimeId,
+            componentId: runtime.component.id,
+            runtime: runtime
+        });
+    }
+
+    if validatedRuntimes.length() == 0 {
+        log:printWarn("No valid runtimes found to delete logger", loggerName = loggerName);
+        return {
+            success: false,
+            message: "No valid runtimes found to delete logger"
+        };
+    }
+
+    log:printDebug("deleteLoggerMI: calling MI management API", loggerName = loggerName, validatedRuntimeCount = validatedRuntimes.length());
+    int successCount = 0;
+    int failureCount = 0;
+
+    foreach types:ValidatedRuntime validated in validatedRuntimes {
+        string baseUrl = check storage:buildManagementBaseUrl(
+                validated.runtime.managementHostname,
+                validated.runtime.managementPort
+        );
+        log:printDebug("Calling MI management API to delete logger", runtimeId = validated.runtimeId, loggerName = loggerName, baseUrl = baseUrl);
+
+        http:Client|error mgmtClientResult = artifactsApiAllowInsecureTLS
+            ? new (baseUrl, {secureSocket: {enable: false}})
+            : new (baseUrl);
+
+        if mgmtClientResult is error {
+            log:printError("Failed to create management API client for runtime",
+                    runtimeId = validated.runtimeId,
+                    'error = mgmtClientResult);
+            failureCount += 1;
+            continue;
+        }
+
+        string|error hmacTokenResult = storage:issueRuntimeHmacToken(validated.runtimeId);
+        if hmacTokenResult is error {
+            log:printError("Failed to generate HMAC token for runtime",
+                    runtimeId = validated.runtimeId,
+                    'error = hmacTokenResult);
+            failureCount += 1;
+            continue;
+        }
+
+        types:MgmtDeleteLoggerResponse|error deleteResult = mi_management:deleteLogger(
+                mgmtClientResult,
+                hmacTokenResult,
+                loggerName
+        );
+
+        if deleteResult is error {
+            log:printError("Failed to delete logger on runtime",
+                    runtimeId = validated.runtimeId,
+                    loggerName = loggerName,
+                    'error = deleteResult);
+            failureCount += 1;
+        } else {
+            log:printInfo("Successfully deleted logger on runtime",
+                    runtimeId = validated.runtimeId,
+                    loggerName = loggerName);
+            successCount += 1;
+        }
+    }
+
+    if successCount == 0 {
+        log:printError("Failed to delete logger on all runtimes", loggerName = loggerName, failureCount = failureCount);
+        return {
+            success: false,
+            message: string `Failed to delete logger ${loggerName} on all ${failureCount} runtime(s)`
+        };
+    }
+
+    string message = successCount == validatedRuntimes.length()
+        ? string `Successfully deleted logger ${loggerName} from all ${successCount} runtime(s)`
+        : string `Deleted logger ${loggerName} from ${successCount} runtime(s), failed on ${failureCount} runtime(s)`;
+
+    return {success: true, message: message};
+}
+
 isolated function validateRegistryResourceAccess(
         types:UserContextV2 userContext,
         string runtimeId,
@@ -883,8 +990,8 @@ service /graphql on graphqlListener {
         return result;
     }
 
-    // Get Carbon Apps for a specific environment and component
-    isolated resource function get carbonAppsByEnvironmentAndComponent(graphql:Context context, string environmentId, string componentId) returns types:CarbonApp[]|error {
+    // Get Composite Apps for a specific environment and component
+    isolated resource function get compositeAppsByEnvironmentAndComponent(graphql:Context context, string environmentId, string componentId) returns types:CompositeApp[]|error {
         types:UserContextV2 userContext = check extractUserContext(context);
 
         // Get project ID for the component (lightweight query for access control)
@@ -900,11 +1007,50 @@ service /graphql on graphqlListener {
 
         // Verify user has view, edit, or manage permission
         if !check auth:hasAnyPermission(userContext.userId, [auth:PERMISSION_INTEGRATION_VIEW, auth:PERMISSION_INTEGRATION_EDIT, auth:PERMISSION_INTEGRATION_MANAGE], scope) {
-            log:printWarn("Attempt to access component Carbon Apps without permission", userId = userContext.userId, environmentId = environmentId, componentId = componentId);
+            log:printWarn("Attempt to access component Composite Apps without permission", userId = userContext.userId, environmentId = environmentId, componentId = componentId);
             return [];
         }
 
-        return check storage:getCarbonAppsByEnvironmentAndComponent(environmentId, componentId);
+        return check storage:getCompositeAppsByEnvironmentAndComponent(environmentId, componentId);
+    }
+
+    isolated resource function get compositeAppFaultStackTrace(graphql:Context context, string runtimeId, string appName) returns types:CompositeAppFaultStackTrace|error {
+        string trimmedAppName = appName.trim();
+        if trimmedAppName == "" {
+            return error("App name must not be empty");
+        }
+        types:UserContextV2 userContext = check extractUserContext(context);
+        log:printDebug("Fetching Composite App fault stack trace", userId = userContext.userId, runtimeId = runtimeId, appName = trimmedAppName);
+
+        types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
+        if runtime is () {
+            log:printWarn("Runtime not found for Composite App fault stack trace query", userId = userContext.userId, runtimeId = runtimeId);
+            return error("Runtime not found");
+        }
+
+        types:AccessScope scope = auth:buildScopeFromContext(runtime.component.projectId, runtime.component.id, runtime.environment.id);
+
+        if !check auth:hasAnyPermission(userContext.userId, [auth:PERMISSION_INTEGRATION_VIEW, auth:PERMISSION_INTEGRATION_EDIT, auth:PERMISSION_INTEGRATION_MANAGE], scope) {
+            log:printWarn("Attempt to access Composite App fault stack trace without permission", userId = userContext.userId, runtimeId = runtimeId, appName = trimmedAppName);
+            return error("Unauthorized");
+        }
+
+        if runtime.status != types:RUNNING {
+            log:printWarn("Runtime is not online for Composite App fault stack trace query", userId = userContext.userId, runtimeId = runtimeId, status = runtime.status);
+            return error("Runtime is not online");
+        }
+
+        string baseUrl = check storage:buildManagementBaseUrl(runtime.managementHostname, runtime.managementPort);
+        log:printDebug("Calling MI management API for Composite App fault stack trace", runtimeId = runtimeId, appName = trimmedAppName, baseUrl = baseUrl);
+        http:Client mgmtClient = check (artifactsApiAllowInsecureTLS
+            ? new (baseUrl, {secureSocket: {enable: false}})
+            : new (baseUrl));
+
+        string hmacToken = check storage:issueRuntimeHmacToken(runtimeId);
+
+        string faultStackTrace = check mi_management:fetchCompositeAppFaultStackTrace(mgmtClient, hmacToken, trimmedAppName);
+        log:printDebug("Successfully fetched Composite App fault stack trace", runtimeId = runtimeId, appName = trimmedAppName);
+        return {runtimeId, appName: trimmedAppName, faultStackTrace};
     }
 
     // Get Inbound Endpoints for a specific environment and component
@@ -1717,7 +1863,35 @@ service /graphql on graphqlListener {
         };
     }
 
-    // Update log level for BI and MI runtimes
+    isolated remote function deleteLogger(graphql:Context context, types:DeleteLoggerInput input) returns types:DeleteLoggerResponse|error {
+        types:UserContextV2 userContext = check extractUserContext(context);
+        log:printDebug("deleteLogger request received", userId = userContext.userId, loggerName = input.loggerName, runtimeCount = input.runtimeIds.length());
+
+        if input.runtimeIds.length() == 0 {
+            return error("At least one runtime ID must be provided");
+        }
+        if input.loggerName.trim().length() == 0 {
+            log:printWarn("Empty logger name provided", userId = userContext.userId);
+            return error("Logger name is required");
+        }
+
+        string[] nonMiIds = [];
+        foreach string runtimeId in input.runtimeIds {
+            types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
+            if runtime is () {
+                continue;
+            }
+            if runtime.component.componentType != types:MI {
+                nonMiIds.push(runtimeId);
+            }
+        }
+        if nonMiIds.length() > 0 {
+            return error(string `Only MI runtimes supported, invalid runtimeIds: ${nonMiIds.toString()}`);
+        }
+
+        return check deleteLoggerMI(userContext, input);
+    }
+
     isolated remote function updateLogLevel(graphql:Context context, types:UpdateLogLevelInput input) returns types:UpdateLogLevelResponse|error {
         types:UserContextV2 userContext = check extractUserContext(context);
 
@@ -3382,6 +3556,14 @@ service /graphql on graphqlListener {
             string userIdStr = userIdJson.toString();
             string encodedUsername = check url:encode(userIdStr, "UTF-8");
 
+            string username = userIdStr;
+            string domain = "primary";
+            int? slashIdx = userIdStr.indexOf("/");
+            if slashIdx is int {
+                domain = userIdStr.substring(0, slashIdx);
+                username = userIdStr.substring(slashIdx + 1);
+            }
+
             boolean isAdmin = false;
             http:Response|error detailResponse = mgmtClient->get(string `/management/users/${encodedUsername}`, {
                 "Authorization": string `Bearer ${bearerToken}`,
@@ -3396,14 +3578,14 @@ service /graphql on graphqlListener {
                     }
                 }
             }
-            enrichedUsers.push({username: userIdStr, isAdmin});
+            enrichedUsers.push({username, domain, isAdmin});
         }
 
         log:printDebug("Successfully fetched MI users from runtime", runtimeId = runtimeId, userCount = enrichedUsers.length());
         return {users: enrichedUsers};
     }
 
-    isolated remote function addMIUser(graphql:Context context, string componentId, string runtimeId, string username, string password, boolean isAdmin = false) returns types:MIUserOperationResponse|error {
+    isolated remote function addMIUser(graphql:Context context, string componentId, string runtimeId, string username, string password, boolean isAdmin = false, string domain = "primary") returns types:MIUserOperationResponse|error {
         types:UserContextV2 userContext = check extractUserContext(context);
 
         types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
@@ -3437,8 +3619,8 @@ service /graphql on graphqlListener {
         }
 
         string bearerToken = check storage:issueRuntimeHmacToken(runtimeId);
-        json createPayload = {userId: username, password, isAdmin};
-        log:printInfo("Creating MI user on runtime management API", runtimeId = runtimeId, username = username, isAdmin = isAdmin);
+        json createPayload = {userId: username, password, isAdmin, domain};
+        log:printInfo("Creating MI user on runtime management API", runtimeId = runtimeId, username = username, isAdmin = isAdmin, domain = domain);
 
         http:Response|error createResponse = mgmtClient->post("/management/users", createPayload, {
             "Authorization": string `Bearer ${bearerToken}`,
@@ -3470,7 +3652,7 @@ service /graphql on graphqlListener {
         return {username, status: "Added"};
     }
 
-    isolated remote function deleteMIUser(graphql:Context context, string componentId, string runtimeId, string username) returns types:MIUserOperationResponse|error {
+    isolated remote function deleteMIUser(graphql:Context context, string componentId, string runtimeId, string username, string domain = "primary") returns types:MIUserOperationResponse|error {
         types:UserContextV2 userContext = check extractUserContext(context);
 
         types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
@@ -3503,9 +3685,13 @@ service /graphql on graphqlListener {
         string encodedUsername = check url:encode(trimmedUsername, "UTF-8");
 
         string bearerToken = check storage:issueRuntimeHmacToken(runtimeId);
-        log:printInfo("Deleting MI user on runtime management API", runtimeId = runtimeId, username = trimmedUsername);
+        log:printInfo("Deleting MI user on runtime management API", runtimeId = runtimeId, username = trimmedUsername, domain = domain);
 
-        http:Response|error deleteResponse = mgmtClient->delete(string `/management/users/${encodedUsername}`, (), {
+        string deletePath = domain == "primary"
+            ? string `/management/users/${encodedUsername}`
+            : string `/management/users/${encodedUsername}?domain=${check url:encode(domain, "UTF-8")}`;
+
+        http:Response|error deleteResponse = mgmtClient->delete(deletePath, (), {
             "Authorization": string `Bearer ${bearerToken}`
         });
         if deleteResponse is error {
@@ -3530,6 +3716,12 @@ service /graphql on graphqlListener {
 
         log:printInfo("Successfully deleted MI user on runtime", username = username, runtimeId = runtimeId);
         return {username, status: "Deleted"};
+    }
+
+    // Returns ICP server version information
+    isolated resource function get systemInfo(graphql:Context context) returns types:SystemInfo|error {
+        _ = check extractUserContext(context);
+        return {version: icpVersion};
     }
 }
 

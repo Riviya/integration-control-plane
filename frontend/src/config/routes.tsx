@@ -38,6 +38,7 @@ import ForceChangePassword from '../pages/ForceChangePassword';
 import ManageLoggers from '../pages/ManageLoggers';
 import { ScopeResolver, generateMatrixRoutes, withScope, type Matrix } from '../nav';
 import { createElement } from 'react';
+import ErrorPage from '../pages/Error';
 
 export interface AppRoute extends Omit<RouteProps, 'children'> {
   children?: AppRoute[];
@@ -55,6 +56,8 @@ const MATRIX: Matrix = {
 
 const routes: AppRoute[] = [
   { path: '/', element: <Navigate to="/login" replace /> },
+  { path: '/error', element: <ErrorPage /> },
+  { path: '*', element: <Navigate to="/error?type=404" replace /> },
   {
     element: <PublicLayout />,
     children: [{ path: loginUrl(), element: <Login /> }],

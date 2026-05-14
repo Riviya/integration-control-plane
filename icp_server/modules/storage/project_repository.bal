@@ -22,7 +22,7 @@ import ballerina/uuid;
 
 // Helper function to get Project Admin role ID
 isolated function getProjectAdminRoleId() returns string|error {
-    sql:ParameterizedQuery query = `SELECT role_id FROM roles_v2 WHERE role_name = 'Project Admin'`;
+    sql:ParameterizedQuery query = `SELECT role_id FROM roles_v2 WHERE role_name = 'Project Admin' ORDER BY role_id`;
     query = appendLimitClause(query, 1);
 
     stream<record {|string role_id;|}, sql:Error?> roleStream = dbClient->query(query);
@@ -57,7 +57,8 @@ public isolated function createProject(types:ProjectInput project, types:UserCon
     // Check for duplicate handler within the same org
     sql:ParameterizedQuery handlerCheckQuery = `SELECT COUNT(*) as cnt FROM projects WHERE org_id = ${project.orgId} AND handler = ${handler}`;
     stream<record {|int cnt;|}, sql:Error?> handlerCheckStream = dbClient->query(handlerCheckQuery);
-    record {|int cnt;|}[] handlerCheckResult = check from record {|int cnt;|} r in handlerCheckStream select r;
+    record {|int cnt;|}[] handlerCheckResult = check from record {|int cnt;|} r in handlerCheckStream
+        select r;
     if handlerCheckResult.length() > 0 && handlerCheckResult[0].cnt > 0 {
         return error(string `Project handler '${handler}' is already taken in this organization`);
     }
@@ -98,8 +99,8 @@ public isolated function createProject(types:ProjectInput project, types:UserCon
 
         // 1. Create project admin group
         string adminGroupId = uuid:createType1AsString();
-        string groupName = string `${project.name} Admins`;
-        string groupDescription = string `Admin group for project: ${project.name}`;
+        string groupName = string `${handler} Admins`;
+        string groupDescription = string `Admin group for project: ${handler}`;
 
         sql:ExecutionResult|sql:Error groupResult = dbClient->execute(`
             INSERT INTO user_groups (group_id, group_name, org_uuid, description)
@@ -154,10 +155,18 @@ public isolated function createProject(types:ProjectInput project, types:UserCon
         // RBAC setup errors arrive as plain errors with their own messages via `fail`.
         if e is sql:Error {
             match classifySqlError(e) {
-                DUPLICATE_KEY => { return error("A project with this name or handler already exists in this organization", e); }
-                VALUE_TOO_LONG => { return error("The provided value exceeds the maximum allowed length", e); }
-                FOREIGN_KEY_VIOLATION => { return error("Cannot complete the operation due to a dependency constraint", e); }
-                _ => { return error("An unexpected error occurred. Please contact your administrator.", e); }
+                DUPLICATE_KEY => {
+                    return error("A project with this name or handler already exists in this organization", e);
+                }
+                VALUE_TOO_LONG => {
+                    return error("The provided value exceeds the maximum allowed length", e);
+                }
+                FOREIGN_KEY_VIOLATION => {
+                    return error("Cannot complete the operation due to a dependency constraint", e);
+                }
+                _ => {
+                    return error("An unexpected error occurred. Please contact your administrator.", e);
+                }
             }
         }
         return e;
@@ -336,9 +345,15 @@ public isolated function updateProjectWithInput(types:ProjectUpdateInput project
         log:printError(string `Failed to update project ${project.id}`, 'error = e);
         if e is sql:Error {
             match classifySqlError(e) {
-                DUPLICATE_KEY => { return error("A project with this name already exists in this organization", e); }
-                VALUE_TOO_LONG => { return error("The provided value exceeds the maximum allowed length", e); }
-                _ => { return error("An unexpected error occurred. Please contact your administrator.", e); }
+                DUPLICATE_KEY => {
+                    return error("A project with this name already exists in this organization", e);
+                }
+                VALUE_TOO_LONG => {
+                    return error("The provided value exceeds the maximum allowed length", e);
+                }
+                _ => {
+                    return error("An unexpected error occurred. Please contact your administrator.", e);
+                }
             }
         }
         return error("An unexpected error occurred while updating the project. Please contact your administrator.", e);
@@ -347,17 +362,73 @@ public isolated function updateProjectWithInput(types:ProjectUpdateInput project
     return ();
 }
 
-// Delete a project by ID (this will cascade delete all components, runtimes, roles, and user role assignments)
+// Delete a project by ID and clean up the auto-created project admin group.
 public isolated function deleteProject(string projectId) returns error? {
-    sql:ParameterizedQuery deleteQuery = `DELETE FROM projects WHERE project_id = ${projectId}`;
-    var result = dbClient->execute(deleteQuery);
-    if result is sql:Error {
-        log:printError(string `Failed to delete project ${projectId}`, 'error = result);
-        match classifySqlError(result) {
-            FOREIGN_KEY_VIOLATION => { return error("Cannot delete project because it has dependent resources", result); }
-            _ => { return error("An unexpected error occurred. Please contact your administrator.", result); }
+    do {
+        transaction {
+            record {|string name; string handler; int org_id;|}|sql:Error projectRecord = dbClient->queryRow(
+                `SELECT name, handler, org_id FROM projects WHERE project_id = ${projectId}`
+            );
+            if projectRecord is sql:NoRowsError {
+                fail error(string `Project with ID ${projectId} not found`);
+            }
+            if projectRecord is sql:Error {
+                fail projectRecord;
+            }
+
+            string projectAdminRoleId = check getProjectAdminRoleId();
+            string handlerBasedAdminGroup = string `${projectRecord.handler} Admins`;
+
+            sql:ExecutionResult|sql:Error groupDeleteResult = dbClient->execute(`
+                DELETE FROM user_groups
+                WHERE group_name = ${handlerBasedAdminGroup}
+                    AND org_uuid = ${projectRecord.org_id}
+                    AND group_id IN (
+                        SELECT group_id FROM group_role_mapping
+                        WHERE project_uuid = ${projectId} AND role_id = ${projectAdminRoleId}
+                    )
+            `);
+            if groupDeleteResult is sql:Error {
+                fail groupDeleteResult;
+            }
+
+            // Explicitly remove all remaining group_role_mapping rows scoped to this project.
+            // On MySQL/H2/PostgreSQL these would be cascade-deleted when the project row is removed,
+            // but MSSQL defines fk_grp_role_project as ON DELETE NO ACTION (to avoid multiple cascade
+            // path errors), so it does not cascade and instead leaves orphaned records silently.
+            // Deleting them here makes the cleanup correct and explicit on all database engines.
+            sql:ExecutionResult|sql:Error roleMappingDeleteResult = dbClient->execute(
+                `DELETE FROM group_role_mapping WHERE project_uuid = ${projectId}`
+            );
+            if roleMappingDeleteResult is sql:Error {
+                fail roleMappingDeleteResult;
+            }
+            log:printInfo(string `Removed all role mappings scoped to project`, projectId = projectId);
+
+            sql:ExecutionResult|sql:Error projectDeleteResult = dbClient->execute(
+                `DELETE FROM projects WHERE project_id = ${projectId}`
+            );
+            if projectDeleteResult is sql:Error {
+                fail projectDeleteResult;
+            }
+
+            check commit;
         }
+    } on fail error e {
+        log:printError(string `Failed to delete project ${projectId}`, 'error = e);
+        if e is sql:Error {
+            match classifySqlError(e) {
+                FOREIGN_KEY_VIOLATION => {
+                    return error("Cannot delete project because it has dependent resources", e);
+                }
+                _ => {
+                    return error("An unexpected error occurred. Please contact your administrator.", e);
+                }
+            }
+        }
+        return e;
     }
+
     log:printInfo(string `Successfully deleted project ${projectId}`);
     return ();
 }
@@ -424,4 +495,4 @@ public isolated function checkProjectHandlerAvailability(int orgId, string proje
         alternateHandlerCandidate: alternateCandidate
     };
 }
-    
+

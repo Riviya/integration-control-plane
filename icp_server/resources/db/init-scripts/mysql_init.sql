@@ -632,6 +632,21 @@ CREATE TABLE bi_automation_artifacts (
     INDEX idx_execution_timestamp (execution_timestamp)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE bi_automation_execution_history (
+    execution_id CHAR(36) NOT NULL,
+    runtime_id CHAR(36) NOT NULL,
+    package_org VARCHAR(200) NOT NULL,
+    package_name VARCHAR(200) NOT NULL,
+    package_version VARCHAR(50) NOT NULL,
+    execution_timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (execution_id),
+    CONSTRAINT fk_bi_automation_execution_history_runtime FOREIGN KEY (runtime_id) REFERENCES runtimes (runtime_id) ON DELETE CASCADE,
+    INDEX idx_runtime_id (runtime_id),
+    INDEX idx_package_name (package_name),
+    INDEX idx_execution_timestamp (execution_timestamp)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Runtime log levels for BI components
 CREATE TABLE bi_runtime_log_levels (
     runtime_id CHAR(36) NOT NULL,
@@ -665,7 +680,7 @@ CREATE TABLE mi_api_artifacts (
     ) NOT NULL DEFAULT 'enabled',
     tracing VARCHAR(20) NOT NULL DEFAULT 'disabled',
     statistics VARCHAR(20) NOT NULL DEFAULT 'disabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, api_name),
@@ -702,7 +717,7 @@ CREATE TABLE mi_proxy_service_artifacts (
     ) NOT NULL DEFAULT 'enabled',
     tracing VARCHAR(20) NOT NULL DEFAULT 'disabled',
     statistics VARCHAR(20) NOT NULL DEFAULT 'disabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, proxy_name),
@@ -738,7 +753,7 @@ CREATE TABLE mi_endpoint_artifacts (
     ) NOT NULL DEFAULT 'enabled',
     tracing VARCHAR(20) NOT NULL DEFAULT 'disabled',
     statistics VARCHAR(20) NOT NULL DEFAULT 'disabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, endpoint_name),
@@ -779,7 +794,7 @@ CREATE TABLE mi_inbound_endpoint_artifacts (
         'disabled'
     ) NOT NULL DEFAULT 'enabled',
     tracing VARCHAR(20) NOT NULL DEFAULT 'disabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, inbound_name),
@@ -804,7 +819,7 @@ CREATE TABLE mi_sequence_artifacts (
     ) NOT NULL DEFAULT 'enabled',
     tracing VARCHAR(20) NOT NULL DEFAULT 'disabled',
     statistics VARCHAR(20) NOT NULL DEFAULT 'disabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, sequence_name),
@@ -827,7 +842,7 @@ CREATE TABLE mi_task_artifacts (
         'enabled',
         'disabled'
     ) NOT NULL DEFAULT 'enabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, task_name),
@@ -845,7 +860,7 @@ CREATE TABLE mi_template_artifacts (
     template_type VARCHAR(100) NOT NULL,
     tracing VARCHAR(20) NOT NULL DEFAULT 'disabled',
     statistics VARCHAR(20) NOT NULL DEFAULT 'disabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, template_name),
@@ -861,7 +876,7 @@ CREATE TABLE mi_message_store_artifacts (
     store_name VARCHAR(200) NOT NULL,
     store_type VARCHAR(100) NOT NULL,
     size BIGINT NOT NULL DEFAULT 0,
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, store_name),
@@ -882,7 +897,7 @@ CREATE TABLE mi_message_processor_artifacts (
         'enabled',
         'disabled'
     ) NOT NULL DEFAULT 'enabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, processor_name),
@@ -905,7 +920,7 @@ CREATE TABLE mi_local_entry_artifacts (
         'enabled',
         'disabled'
     ) NOT NULL DEFAULT 'enabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, entry_name),
@@ -928,7 +943,7 @@ CREATE TABLE mi_data_service_artifacts (
         'enabled',
         'disabled'
     ) NOT NULL DEFAULT 'enabled',
-    carbon_app VARCHAR(200) NULL,
+    composite_app VARCHAR(200) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, service_name),
@@ -939,17 +954,18 @@ CREATE TABLE mi_data_service_artifacts (
     INDEX idx_state (state)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
--- Carbon Apps (MI)
-CREATE TABLE mi_carbon_app_artifacts (
+-- Composite Apps (MI)
+CREATE TABLE mi_composite_app_artifacts (
     runtime_id CHAR(36) NOT NULL,
     app_name VARCHAR(200) NOT NULL,
     version VARCHAR(50) NULL,
     state ENUM('Active', 'Faulty') NOT NULL DEFAULT 'Active',
+    error_message TEXT NULL, -- Error message when state is Faulty
     artifacts VARCHAR(4000) NULL, -- JSON array serialized as string (convert to JSON in app code when needed)
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (runtime_id, app_name),
-    CONSTRAINT fk_mi_carbon_app_artifacts_runtime FOREIGN KEY (runtime_id) REFERENCES runtimes (runtime_id) ON DELETE CASCADE,
+    CONSTRAINT fk_mi_composite_app_artifacts_runtime FOREIGN KEY (runtime_id) REFERENCES runtimes (runtime_id) ON DELETE CASCADE,
     INDEX idx_runtime_id (runtime_id),
     INDEX idx_app_name (app_name),
     INDEX idx_state (state)

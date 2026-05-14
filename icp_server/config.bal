@@ -18,6 +18,9 @@ import icp_server.types;
 
 import ballerina/file;
 
+// ICP version
+configurable string icpVersion = "2.0.0-SNAPSHOT";
+
 // Server configuration
 configurable int serverPort = 9446;
 configurable int defaultOpensearchAdaptorPort = 9449;
@@ -31,7 +34,7 @@ configurable string keystorePassword = "wso2carbon";
 configurable string truststorePath = check file:joinPath("..", "conf", "security", "client-truststore.jks");
 configurable string truststorePassword = "wso2carbon";
 
-configurable int schedulerIntervalSeconds = 600;
+configurable int schedulerIntervalSeconds = 60;
 configurable int refreshTokenCleanupIntervalSeconds = 86400; // 24 hours (in seconds)
 
 // Runtime auth configuration (runtime and server communication)

@@ -22,6 +22,7 @@ import { BrowserRouter } from 'react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider } from './auth/AuthContext';
 import { loadConfig } from './config/api';
 import { AccessControlProvider } from './contexts/AccessControlContext';
@@ -38,7 +39,9 @@ loadConfig().then(() => {
           <BrowserRouter>
             <AuthProvider>
               <AccessControlProvider>
-                <App />
+                <ErrorBoundary>
+                  <App />
+                </ErrorBoundary>
               </AccessControlProvider>
             </AuthProvider>
           </BrowserRouter>

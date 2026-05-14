@@ -41,7 +41,8 @@ import {
   TablePagination,
   Typography,
 } from '@wso2/oxygen-ui';
-import { Check, Copy, FileText, Key, Plus, RefreshCw, Trash2, X } from '@wso2/oxygen-ui-icons-react';
+import { FileText, Key, Plus, RefreshCw, Trash2, X } from '@wso2/oxygen-ui-icons-react';
+import CodeBoxWithCopy from '../components/CodeBoxWithCopy';
 import SearchField from '../components/SearchField';
 import { LogFilesDrawer } from '../components/LogFilesDrawer';
 import { useCallback, useEffect, useState, type JSX } from 'react';
@@ -110,7 +111,6 @@ function AddRuntimeModal({
   const createMutation = useCreateOrgSecret();
   const queryClient = useQueryClient();
   const [secret, setSecret] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isBI = componentType === 'BI';
 
@@ -131,13 +131,6 @@ function AddRuntimeModal({
   };
 
   const config = secret ? (isBI ? biToml(environmentName, secret, projectHandle, integrationHandle) : miToml(environmentName, secret, projectHandle, integrationHandle)) : null;
-
-  const handleCopy = async () => {
-    if (!config) return;
-    await navigator.clipboard.writeText(config);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   const handleDialogClose = (_event: unknown, reason: string) => {
     if (createMutation.isPending && (reason === 'backdropClick' || reason === 'escapeKeyDown')) return;
@@ -171,27 +164,21 @@ function AddRuntimeModal({
               Copy this secret now. It will not be shown again.
             </Alert>
             <DialogContentText sx={{ mb: 1 }}>
-              Add the following configuration to your runtime's <strong>{isBI ? 'Config.toml' : 'deployment.toml'}</strong> file:
+              Add the following configuration to your runtime's <strong>{isBI ? 'Config.toml' : 'deployment.toml'}</strong> file. Change the <strong>runtime</strong> value; it must be unique for each registered runtime.
             </DialogContentText>
-            <Box sx={{ position: 'relative' }}>
-              <Box
-                component="pre"
-                sx={{
-                  p: 2,
-                  bgcolor: 'action.hover',
-                  borderRadius: 1,
-                  overflow: 'auto',
-                  fontSize: 13,
-                  fontFamily: 'monospace',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                }}>
-                {config}
-              </Box>
-              <IconButton size="small" onClick={handleCopy} sx={{ position: 'absolute', top: 8, right: 8 }} aria-label="Copy">
-                {copied ? <Check size={16} /> : <Copy size={16} />}
-              </IconButton>
-            </Box>
+            {config && <CodeBoxWithCopy code={config} />}
+            {isBI && (
+              <>
+                <DialogContentText sx={{ mb: 1 }}>
+                  Add the following configuration to your runtime's <strong>Ballerina.toml</strong> file:
+                </DialogContentText>
+                <CodeBoxWithCopy code={`[build-options]\nremoteManagement = true`} />
+                <DialogContentText sx={{ mb: 1 }}>
+                  Import wso2/icp.runtime.bridge to your runtime's <strong>main.bal</strong> file:
+                </DialogContentText>
+                <CodeBoxWithCopy code={`import wso2/icp.runtime.bridge as _;`} />
+              </>
+            )}
           </>
         )}
       </DialogContent>
@@ -343,10 +330,61 @@ function EnvironmentRuntimeCard({
     onAutoOpenConsumed?.();
   }, [autoOpenAddRuntime, componentId, hasAnyPermission, onAutoOpenConsumed]);
 
-  const filtered = runtimes.filter((r) => !query || r.runtimeId.toLowerCase().includes(query.toLowerCase()) || r.runtimeType.toLowerCase().includes(query.toLowerCase()) || (r.component?.displayName ?? '').toLowerCase().includes(query.toLowerCase()));
-  const maxPage = Math.max(0, Math.ceil(filtered.length / rowsPerPage) - 1);
+  // Sorting state: key = column, direction = 'asc' | 'desc'
+  const [sort, setSort] = useState<{ key: keyof GqlRuntime | 'component' | 'registrationTime' | 'lastHeartbeat'; direction: 'asc' | 'desc' }>({ key: 'runtimeName', direction: 'asc' });
+
+  const filtered = runtimes.filter((r) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return (
+      (r.runtimeName || '').toLowerCase().includes(q) ||
+      r.runtimeId.toLowerCase().includes(q) ||
+      r.runtimeType.toLowerCase().includes(q) ||
+      (r.component?.displayName ?? '').toLowerCase().includes(q) ||
+      (r.status || '').toLowerCase().includes(q) ||
+      (r.version || '').toLowerCase().includes(q) ||
+      (r.platformName || '').toLowerCase().includes(q) ||
+      (r.platformVersion || '').toLowerCase().includes(q) ||
+      (r.osName || '').toLowerCase().includes(q) ||
+      (r.osVersion || '').toLowerCase().includes(q)
+    );
+  });
+
+  // Sorting logic
+  const sorted = [...filtered].sort((a, b) => {
+    const { key, direction } = sort;
+    let aValue: any = a[key as keyof GqlRuntime];
+    let bValue: any = b[key as keyof GqlRuntime];
+    if (key === 'component') {
+      aValue = a.component?.displayName ?? '';
+      bValue = b.component?.displayName ?? '';
+    }
+    if (key === 'registrationTime') {
+      aValue = a.registrationTime;
+      bValue = b.registrationTime;
+    }
+    if (key === 'lastHeartbeat') {
+      aValue = a.lastHeartbeat;
+      bValue = b.lastHeartbeat;
+    }
+    if (typeof aValue === 'string' && typeof bValue === 'string') {
+      const cmp = aValue.localeCompare(bValue);
+      return direction === 'asc' ? cmp : -cmp;
+    }
+    if (aValue instanceof Date && bValue instanceof Date) {
+      return direction === 'asc' ? aValue.getTime() - bValue.getTime() : bValue.getTime() - aValue.getTime();
+    }
+    if (typeof aValue === 'number' && typeof bValue === 'number') {
+      return direction === 'asc' ? aValue - bValue : bValue - aValue;
+    }
+    // Fallback to string compare
+    const cmp = String(aValue ?? '').localeCompare(String(bValue ?? ''));
+    return direction === 'asc' ? cmp : -cmp;
+  });
+
+  const maxPage = Math.max(0, Math.ceil(sorted.length / rowsPerPage) - 1);
   const safePage = Math.min(page, maxPage);
-  const paged = filtered.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage);
+  const paged = sorted.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage);
 
   return (
     <>
@@ -388,15 +426,64 @@ function EnvironmentRuntimeCard({
               <ListingTable>
                 <ListingTable.Head>
                   <ListingTable.Row>
-                    <ListingTable.Cell>Runtime Name</ListingTable.Cell>
-                    <ListingTable.Cell>Runtime ID</ListingTable.Cell>
-                    <ListingTable.Cell>Type</ListingTable.Cell>
-                    <ListingTable.Cell>Status</ListingTable.Cell>
-                    <ListingTable.Cell>Version</ListingTable.Cell>
+                    <ListingTable.Cell>
+                      <ListingTable.SortLabel
+                        active={sort.key === 'runtimeName'}
+                        direction={sort.key === 'runtimeName' ? sort.direction : 'asc'}
+                        onClick={() => setSort((prev) => ({ key: 'runtimeName', direction: prev.key === 'runtimeName' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                        Runtime Name
+                      </ListingTable.SortLabel>
+                    </ListingTable.Cell>
+                    <ListingTable.Cell>
+                      <ListingTable.SortLabel
+                        active={sort.key === 'runtimeId'}
+                        direction={sort.key === 'runtimeId' ? sort.direction : 'asc'}
+                        onClick={() => setSort((prev) => ({ key: 'runtimeId', direction: prev.key === 'runtimeId' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                        Runtime ID
+                      </ListingTable.SortLabel>
+                    </ListingTable.Cell>
+                    <ListingTable.Cell>
+                      <ListingTable.SortLabel
+                        active={sort.key === 'runtimeType'}
+                        direction={sort.key === 'runtimeType' ? sort.direction : 'asc'}
+                        onClick={() => setSort((prev) => ({ key: 'runtimeType', direction: prev.key === 'runtimeType' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                        Type
+                      </ListingTable.SortLabel>
+                    </ListingTable.Cell>
+                    <ListingTable.Cell>
+                      <ListingTable.SortLabel
+                        active={sort.key === 'status'}
+                        direction={sort.key === 'status' ? sort.direction : 'asc'}
+                        onClick={() => setSort((prev) => ({ key: 'status', direction: prev.key === 'status' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                        Status
+                      </ListingTable.SortLabel>
+                    </ListingTable.Cell>
+                    <ListingTable.Cell>
+                      <ListingTable.SortLabel
+                        active={sort.key === 'version'}
+                        direction={sort.key === 'version' ? sort.direction : 'asc'}
+                        onClick={() => setSort((prev) => ({ key: 'version', direction: prev.key === 'version' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                        Version
+                      </ListingTable.SortLabel>
+                    </ListingTable.Cell>
                     <ListingTable.Cell>Platform</ListingTable.Cell>
                     <ListingTable.Cell>OS</ListingTable.Cell>
-                    <ListingTable.Cell>Registration Time</ListingTable.Cell>
-                    <ListingTable.Cell>Last Heartbeat</ListingTable.Cell>
+                    <ListingTable.Cell>
+                      <ListingTable.SortLabel
+                        active={sort.key === 'registrationTime'}
+                        direction={sort.key === 'registrationTime' ? sort.direction : 'asc'}
+                        onClick={() => setSort((prev) => ({ key: 'registrationTime', direction: prev.key === 'registrationTime' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                        Registration Time
+                      </ListingTable.SortLabel>
+                    </ListingTable.Cell>
+                    <ListingTable.Cell>
+                      <ListingTable.SortLabel
+                        active={sort.key === 'lastHeartbeat'}
+                        direction={sort.key === 'lastHeartbeat' ? sort.direction : 'asc'}
+                        onClick={() => setSort((prev) => ({ key: 'lastHeartbeat', direction: prev.key === 'lastHeartbeat' && prev.direction === 'asc' ? 'desc' : 'asc' }))}>
+                        Last Heartbeat
+                      </ListingTable.SortLabel>
+                    </ListingTable.Cell>
                     <ListingTable.Cell>Actions</ListingTable.Cell>
                   </ListingTable.Row>
                 </ListingTable.Head>
@@ -405,7 +492,7 @@ function EnvironmentRuntimeCard({
                     <ListingTable.Row key={r.runtimeId}>
                       <ListingTable.Cell>{r.runtimeName || r.runtimeId}</ListingTable.Cell>
                       <ListingTable.Cell>{r.runtimeId}</ListingTable.Cell>
-                      <ListingTable.Cell>{r.runtimeType}</ListingTable.Cell>
+                      <ListingTable.Cell>{r.runtimeType === 'BI' ? 'Default' : r.runtimeType}</ListingTable.Cell>
                       <ListingTable.Cell>
                         <Chip label={r.status} size="small" color={r.status === 'RUNNING' ? 'success' : 'default'} />
                       </ListingTable.Cell>

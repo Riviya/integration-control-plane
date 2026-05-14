@@ -133,7 +133,7 @@ service /auth on httpListener {
                 log:printInfo(string `User ${username} authenticated but not found in users table, creating user record`);
 
                 // If the auth backend signals that this user should be a super-admin
-                // (e.g. because of an LDAP admin role), add them to the built-in
+                // (e.g. because of an external admin role), add them to the built-in
                 // "Super Admins" group on first login.
                 string[] initialGroupIds = [];
                 if authResult?.isSuperAdmin == true {
@@ -144,7 +144,7 @@ service /auth on httpListener {
                         return utils:createInternalServerError("Could not resolve Super Admins group");
                     }
                     initialGroupIds = [superAdminsGroupId];
-                    log:printInfo("Assigning new LDAP user to Super Admins group on first login", username = username);
+                    log:printInfo("Assigning new user to Super Admins group on first login", username = username);
                 }
 
                 json|error? createResult = storage:createUserV2(userId, username, displayName, initialGroupIds);
@@ -2442,6 +2442,11 @@ service /auth on httpListener {
             };
         }
 
+        // Validate roleName is not blank
+        if roleInput.roleName.trim().length() == 0 {
+            return utils:createBadRequestError("roleName must not be empty or whitespace");
+        }
+
         // Resolve org handle to org ID
         // TODO: use when multiple tenants are supported
         // int|error orgId = storage:getOrgIdByHandle(orgHandle);
@@ -2584,7 +2589,7 @@ service /auth on httpListener {
             }
         ]
     }
-    isolated resource function put orgs/[string orgHandle]/roles/[string roleId](@http:Payload types:RoleV2Input roleInput, http:Request req) returns http:Ok|http:NotFound|http:Unauthorized|http:Forbidden|http:InternalServerError|error {
+    isolated resource function put orgs/[string orgHandle]/roles/[string roleId](@http:Payload types:RoleV2Input roleInput, http:Request req) returns http:Ok|http:BadRequest|http:NotFound|http:Unauthorized|http:Forbidden|http:InternalServerError|error {
         log:printInfo("Updating role", orgHandle = orgHandle, roleId = roleId);
 
         // Permission check: org-level role management
@@ -2604,6 +2609,11 @@ service /auth on httpListener {
                     message: "Insufficient permissions to update roles"
                 }
             };
+        }
+
+        // Validate roleName is not blank
+        if roleInput.roleName.trim().length() == 0 {
+            return utils:createBadRequestError("roleName must not be empty or whitespace");
         }
 
         // Update the role (name, description)
